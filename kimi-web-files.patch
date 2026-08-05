@@ -1,0 +1,842 @@
+diff --git a/apps/kimi-web/src/App.vue b/apps/kimi-web/src/App.vue
+index 5708bcc..ad6f475 100644
+--- a/apps/kimi-web/src/App.vue
++++ b/apps/kimi-web/src/App.vue
+@@ -35,6 +35,8 @@ import { usePageTitle } from './composables/usePageTitle';
+ import { useSidebarLayout } from './composables/useSidebarLayout';
+ import { useFilePreview, type DetailTarget } from './composables/useFilePreview';
+ import { useDetailPanel } from './composables/useDetailPanel';
++import { useFileTree } from './composables/useFileTree';
++import FileTreePanel from './components/FileTreePanel.vue';
+ import { useIsMobile } from './composables/useIsMobile';
+ import { openDialogCount } from './composables/dialogStack';
+ import type { SwarmMember } from './composables/swarmGroups';
+@@ -306,8 +308,14 @@ const {
+   sidePanelVisible,
+   panelDragging,
+   closeOpenSidePanel,
++  openFilesPanel,
++  closeFilesPanel,
+ } = useDetailPanel({ client, sideWidth, detailTarget, closeFilePreview });
+ 
++// Workspace file tree backing the 'files' right-side panel. App scope so the
++// tree survives closing/reopening the panel within the same session.
++const fileTree = useFileTree({ client });
++
+ // Reference to ConversationPane so we can imperatively switch tabs
+ const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(null);
+ 
+@@ -824,6 +832,7 @@ function openPr(url: string): void {
+       :pr="client.activePullRequest.value"
+       :conversation-toc="client.conversationToc.value"
+       @open-changes="openDiffDetail()"
++      @open-files="openFilesPanel()"
+       @select-workspace="handleCreateSessionInWorkspace($event)"
+       @add-workspace="showAddWorkspace = true"
+       @open-pr="openPr"
+@@ -964,6 +973,11 @@ function openPr(url: string): void {
+         @open-external="openPreviewInEditor"
+         @reveal="revealPreviewFile"
+       />
++      <FileTreePanel
++        v-else-if="detailTarget === 'files'"
++        :tree="fileTree"
++        @close="closeFilesPanel"
++      />
+     </aside>
+ 
+     <!-- Internal-build tag — pinned to the app's bottom-right corner, above
+diff --git a/apps/kimi-web/src/components/FileTreePanel.vue b/apps/kimi-web/src/components/FileTreePanel.vue
+new file mode 100644
+index 0000000..6a6bd04
+--- /dev/null
++++ b/apps/kimi-web/src/components/FileTreePanel.vue
+@@ -0,0 +1,342 @@
++<!-- apps/kimi-web/src/components/FileTreePanel.vue -->
++<!-- Workspace file browser in the right-side detail layer ('files' slot):
++     lazy-loaded directory tree with a name filter; clicking a file swaps the
++     tree for the shared FilePreview inside the same panel (back bar returns).
++     All state lives in the useFileTree composable (App scope), so closing and
++     reopening the panel keeps the tree as it was. -->
++<script setup lang="ts">
++import { onMounted, watch } from 'vue';
++import { useI18n } from 'vue-i18n';
++import FilePreview from './FilePreview.vue';
++import Icon from './ui/Icon.vue';
++import IconButton from './ui/IconButton.vue';
++import PanelHeader from './ui/PanelHeader.vue';
++import Tooltip from './ui/Tooltip.vue';
++import { isDirEntry, type FileTree } from '../composables/useFileTree';
++import type { FilePreviewRequest } from '../types';
++
++const props = defineProps<{
++  tree: FileTree;
++}>();
++
++const emit = defineEmits<{
++  close: [];
++}>();
++
++const { t } = useI18n();
++
++// Destructured refs stay reactive in the template (they are top-level here).
++const {
++  cwd,
++  hasSession,
++  rows,
++  expanded,
++  loadingDirs,
++  rootLoaded,
++  rootLoading,
++  dirError,
++  filter,
++  activeFile,
++  activeFilePath,
++  activeFileLine,
++  fileLoading,
++  fileError,
++  downloadUrl,
++} = props.tree;
++
++onMounted(() => {
++  void props.tree.ensureRoot();
++});
++// The panel can open before any session exists (empty composer); load the
++// root as soon as one appears.
++watch(hasSession, (has) => {
++  if (has) void props.tree.ensureRoot();
++});
++
++function handleMarkdownOpenFile(target: FilePreviewRequest): void {
++  void props.tree.openPath(target.path, target.line);
++}
++</script>
++
++<template>
++  <div class="ft">
++    <PanelHeader
++      :title="t('fileTree.title')"
++      :subtitle="cwd"
++      :close-label="t('fileTree.close')"
++      @close="emit('close')"
++    >
++      <Tooltip :text="t('fileTree.refresh')">
++        <IconButton
++          size="sm"
++          :label="t('fileTree.refresh')"
++          :disabled="!hasSession"
++          @click="tree.refresh()"
++        >
++          <Icon name="refresh" size="sm" />
++        </IconButton>
++      </Tooltip>
++    </PanelHeader>
++
++    <!-- No session yet: fs routes are session-scoped, so nothing to list. -->
++    <div v-if="!hasSession" class="ft-empty">{{ t('fileTree.noSession') }}</div>
++
++    <!-- File view: shared FilePreview with a back bar instead of a close. -->
++    <template v-else-if="activeFilePath">
++      <div class="ft-backbar">
++        <button type="button" class="ft-back" @click="tree.backToTree()">
++          <Icon name="chevron-right" size="sm" class="ft-back-icon" />
++          <span>{{ t('fileTree.back') }}</span>
++        </button>
++        <Tooltip :text="activeFilePath">
++          <span class="ft-backpath">{{ activeFilePath }}</span>
++        </Tooltip>
++      </div>
++      <div class="ft-file">
++        <FilePreview
++          :file="activeFile"
++          :loading="fileLoading"
++          :error="fileError ? t('fileTree.loadFileFailed') : null"
++          :line="activeFileLine"
++          :download-url="downloadUrl"
++          external-actions
++          :open-file="handleMarkdownOpenFile"
++          @open-external="tree.openActiveInEditor()"
++          @reveal="tree.revealActive()"
++        />
++      </div>
++    </template>
++
++    <!-- Tree view -->
++    <template v-else>
++      <div class="ft-find">
++        <Icon name="search" size="sm" class="ft-find-icon" />
++        <input
++          v-model="filter"
++          class="ft-find-input"
++          type="text"
++          :placeholder="t('fileTree.findPlaceholder')"
++        />
++      </div>
++      <div class="ft-body">
++        <div v-if="dirError" class="ft-empty">{{ t('fileTree.loadDirFailed') }}</div>
++        <div v-else-if="!rootLoaded && rootLoading" class="ft-empty">
++          <span class="spinner" />
++          {{ t('fileTree.loading') }}
++        </div>
++        <div v-else-if="rows.length === 0" class="ft-empty">{{ t('fileTree.empty') }}</div>
++        <template v-else>
++          <button
++            v-for="row in rows"
++            :key="row.entry.path"
++            type="button"
++            class="ft-row"
++            :class="{ active: row.entry.path === activeFilePath }"
++            :style="{ paddingLeft: `${10 + row.depth * 14}px` }"
++            @click="tree.openEntry(row.entry)"
++          >
++            <template v-if="isDirEntry(row.entry)">
++              <Icon
++                :name="expanded[row.entry.path] ? 'chevron-down' : 'chevron-right'"
++                size="sm"
++                class="ft-chev"
++              />
++              <Icon
++                :name="expanded[row.entry.path] ? 'folder' : 'folder-closed'"
++                size="sm"
++                class="ft-ico"
++              />
++            </template>
++            <template v-else>
++              <span class="ft-chev-space" />
++              <Icon name="file-text" size="sm" class="ft-ico" />
++            </template>
++            <span class="ft-name">{{ row.entry.name }}</span>
++            <span
++              v-if="filter && tree.parentPath(row.entry.path)"
++              class="ft-parent"
++            >
++              {{ tree.parentPath(row.entry.path) }}
++            </span>
++            <span
++              v-if="row.entry.gitStatus"
++              class="ft-git"
++              :title="row.entry.gitStatus"
++            />
++            <span v-if="loadingDirs[row.entry.path]" class="spinner ft-spin" />
++          </button>
++        </template>
++      </div>
++    </template>
++  </div>
++</template>
++
++<style scoped>
++.ft {
++  height: 100%;
++  display: flex;
++  flex-direction: column;
++  min-height: 0;
++  background: var(--color-bg);
++}
++
++.ft-empty {
++  flex: 1;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  gap: 8px;
++  padding: 20px;
++  text-align: center;
++  font: var(--text-base) var(--font-ui);
++  color: var(--color-text-muted);
++}
++
++/* Find box ------------------------------------------------------------ */
++.ft-find {
++  flex: none;
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  margin: 8px 10px;
++  padding: 0 8px;
++  height: 30px;
++  border: 1px solid var(--color-line);
++  border-radius: 6px;
++  background: var(--color-surface);
++  color: var(--color-text-muted);
++}
++.ft-find-icon {
++  flex: none;
++}
++.ft-find-input {
++  flex: 1;
++  min-width: 0;
++  border: none;
++  outline: none;
++  background: transparent;
++  font: var(--text-sm) var(--font-ui);
++  color: var(--color-text);
++}
++
++/* Tree rows ------------------------------------------------------------ */
++.ft-body {
++  flex: 1;
++  min-height: 0;
++  overflow-y: auto;
++  display: flex;
++  flex-direction: column;
++  padding: 2px 4px 12px;
++}
++.ft-row {
++  display: flex;
++  align-items: center;
++  gap: 5px;
++  width: 100%;
++  padding: 3px 8px;
++  border: none;
++  border-radius: 5px;
++  background: transparent;
++  cursor: pointer;
++  text-align: left;
++  font: var(--text-sm) var(--font-ui);
++  color: var(--color-text);
++}
++.ft-row:hover {
++  background: var(--color-surface);
++}
++.ft-row.active {
++  background: var(--color-surface);
++}
++.ft-chev {
++  flex: none;
++  color: var(--color-text-muted);
++}
++.ft-chev-space {
++  flex: none;
++  width: 16px;
++}
++.ft-ico {
++  flex: none;
++  color: var(--color-text-muted);
++}
++.ft-name {
++  flex: none;
++  max-width: 100%;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++.ft-parent {
++  flex: 0 1 auto;
++  min-width: 0;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++  font-size: 11px;
++  color: var(--color-text-muted);
++}
++.ft-git {
++  flex: none;
++  width: 6px;
++  height: 6px;
++  margin-left: auto;
++  border-radius: 50%;
++  background: var(--color-warning, #b58900);
++}
++.ft-spin {
++  flex: none;
++  margin-left: auto;
++}
++
++/* File view ------------------------------------------------------------ */
++.ft-backbar {
++  flex: none;
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  height: 36px;
++  padding: 0 10px;
++  border-bottom: 1px solid var(--color-line);
++  background: var(--color-surface);
++}
++.ft-back {
++  flex: none;
++  display: flex;
++  align-items: center;
++  gap: 2px;
++  border: none;
++  background: transparent;
++  cursor: pointer;
++  padding: 2px 4px;
++  border-radius: 5px;
++  font: var(--text-sm) var(--font-ui);
++  color: var(--color-text-muted);
++}
++.ft-back:hover {
++  background: var(--color-bg);
++  color: var(--color-text);
++}
++.ft-back-icon {
++  transform: rotate(180deg);
++}
++.ft-backpath {
++  flex: 0 1 auto;
++  min-width: 0;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++  font: var(--text-xs) var(--font-mono);
++  color: var(--color-text-muted);
++}
++.ft-file {
++  flex: 1;
++  min-height: 0;
++  display: flex;
++  flex-direction: column;
++}
++.ft-file :deep(.file-preview) {
++  flex: 1;
++  min-height: 0;
++}
++</style>
+diff --git a/apps/kimi-web/src/components/chat/ChatHeader.vue b/apps/kimi-web/src/components/chat/ChatHeader.vue
+index 0dff7ba..74086bd 100644
+--- a/apps/kimi-web/src/components/chat/ChatHeader.vue
++++ b/apps/kimi-web/src/components/chat/ChatHeader.vue
+@@ -38,6 +38,7 @@ const emit = defineEmits<{
+   copyAll: [];
+   copyFinalSummary: [];
+   openChanges: [];
++  openFiles: [];
+   openPr: [url: string];
+   renameSession: [id: string, title: string];
+   forkSession: [id: string];
+@@ -296,6 +297,15 @@ function startArchive(): void {
+ 
+     <div class="ch-spacer" />
+ 
++    <!-- Workspace file browser: opens the right-side Files panel. -->
++    <IconButton
++      class="ch-files"
++      :label="t('fileTree.open')"
++      @click="emit('openFiles')"
++    >
++      <Icon name="folder" size="md" />
++    </IconButton>
++
+     <!-- Git branch + status — plain text with semantic colors. Renders for any
+          git repo, even a detached HEAD (empty branch → "detached" label), so the
+          diff counter below is never hidden just because there's no branch name. -->
+diff --git a/apps/kimi-web/src/components/chat/ConversationPane.vue b/apps/kimi-web/src/components/chat/ConversationPane.vue
+index 0464bea..bf97a8c 100644
+--- a/apps/kimi-web/src/components/chat/ConversationPane.vue
++++ b/apps/kimi-web/src/components/chat/ConversationPane.vue
+@@ -127,6 +127,8 @@ const emit = defineEmits<{
+   openToolDiff: [id: string];
+   /** Chat header / files pane: focus the diff detail layer and refresh git status. */
+   openChanges: [];
++  /** Chat header: toggle the right-side Files (file tree) panel. */
++  openFiles: [];
+   refreshGitStatus: [];
+   /** Edit + resend the last user message (App undoes, then refills composer). */
+   editMessage: [payload: { text: string; attachments?: TurnAttachment[] }];
+@@ -1269,6 +1271,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
+       :pr="pr"
+       :copied="copyConversationCopied"
+       @open-changes="emit('openChanges')"
++      @open-files="emit('openFiles')"
+       @copy-all="chatPaneRef?.copyConversation()"
+       @copy-final-summary="chatPaneRef?.copyFinalSummary()"
+       @open-pr="pr && emit('openPr', pr.url)"
+diff --git a/apps/kimi-web/src/composables/useDetailPanel.ts b/apps/kimi-web/src/composables/useDetailPanel.ts
+index 5a8dc93..be9033c 100644
+--- a/apps/kimi-web/src/composables/useDetailPanel.ts
++++ b/apps/kimi-web/src/composables/useDetailPanel.ts
+@@ -261,6 +261,22 @@ export function useDetailPanel({
+     if (detailTarget.value === 'btw') detailTarget.value = null;
+   }
+ 
++  // ---------------------------------------------------------------------------
++  // Files panel (workspace file tree) — content is re-derived from the active
++  // session's cwd, so like 'file'/'diff' it is excluded from snapshot restore.
++  // ---------------------------------------------------------------------------
++  function openFilesPanel(): void {
++    if (detailTarget.value === 'files') {
++      closeFilesPanel();
++      return;
++    }
++    detailTarget.value = 'files';
++  }
++
++  function closeFilesPanel(): void {
++    if (detailTarget.value === 'files') detailTarget.value = null;
++  }
++
+   // Only hides the right-side BTW panel; the side-chat target is per-session and
+   // preserved so switching back to a session restores its BTW transcript.
+   function hideSideChatPanel(): void {
+@@ -357,6 +373,7 @@ export function useDetailPanel({
+     if (detailTarget.value === 'file') { closeFilePreview(); return true; }
+     if (detailTarget.value === 'diff') { closeDiffDetail(); return true; }
+     if (detailTarget.value === 'btw') { closeSideChat(); return true; }
++    if (detailTarget.value === 'files') { closeFilesPanel(); return true; }
+     return false;
+   }
+ 
+@@ -376,6 +393,7 @@ export function useDetailPanel({
+     closeToolDiff();
+     closeDiffDetail();
+     hideSideChatPanel();
++    closeFilesPanel();
+     // Restore the entering session's panel, if it had one.
+     if (newId) {
+       restoreSnapshot(snapshotBySession.value[newId]);
+@@ -414,6 +432,8 @@ export function useDetailPanel({
+     openSideChatTab,
+     closeSideChat,
+     hideSideChatPanel,
++    openFilesPanel,
++    closeFilesPanel,
+     sidePanelVisible,
+     panelDragging,
+     closeOpenSidePanel,
+diff --git a/apps/kimi-web/src/composables/useFilePreview.ts b/apps/kimi-web/src/composables/useFilePreview.ts
+index f61d98d..6c24829 100644
+--- a/apps/kimi-web/src/composables/useFilePreview.ts
++++ b/apps/kimi-web/src/composables/useFilePreview.ts
+@@ -11,7 +11,7 @@ import type { useKimiWebClient } from './useKimiWebClient';
+ type KimiWebClient = ReturnType<typeof useKimiWebClient>;
+ 
+ /** Which occupant currently owns the shared right-side detail layer. */
+-export type DetailTarget = 'file' | 'diff' | 'thinking' | 'compaction' | 'agent' | 'toolDiff' | 'btw';
++export type DetailTarget = 'file' | 'diff' | 'thinking' | 'compaction' | 'agent' | 'toolDiff' | 'btw' | 'files';
+ 
+ /** Whether a url can feed a native <video>/<img> src. A provider reference like
+  *  `ms://…` has no local bytes and only yields a broken player, so it's treated
+diff --git a/apps/kimi-web/src/composables/useFileTree.ts b/apps/kimi-web/src/composables/useFileTree.ts
+new file mode 100644
+index 0000000..e1dd156
+--- /dev/null
++++ b/apps/kimi-web/src/composables/useFileTree.ts
+@@ -0,0 +1,242 @@
++// apps/kimi-web/src/composables/useFileTree.ts
++// Workspace file tree backing the right-side 'files' detail panel: lazy
++// directory loading via client.listDir (workspace-relative paths), a name
++// filter over the already-loaded nodes, and file loading for the embedded
++// FilePreview. State is session-scoped — switching sessions wipes it.
++
++import { computed, ref, watch } from 'vue';
++import type { FileData } from '../types';
++import type { FsEntry } from '../api/types';
++import type { useKimiWebClient } from './useKimiWebClient';
++
++type KimiWebClient = ReturnType<typeof useKimiWebClient>;
++
++/** A flattened tree row: the entry plus its nesting depth for indentation. */
++export interface FileTreeRow {
++  entry: FsEntry;
++  depth: number;
++}
++
++function isDir(entry: FsEntry): boolean {
++  return entry.kind === 'directory';
++}
++
++export { isDir as isDirEntry };
++
++function sortEntries(entries: FsEntry[]): FsEntry[] {
++  return entries.toSorted((a, b) => {
++    if (isDir(a) !== isDir(b)) return isDir(a) ? -1 : 1;
++    return a.name.localeCompare(b.name);
++  });
++}
++
++export function useFileTree({ client }: { client: KimiWebClient }) {
++  // Directory listing cache: '' is the workspace root; keys are
++  // workspace-relative directory paths as reported by fs:list.
++  const childrenByPath = ref<Record<string, FsEntry[]>>({});
++  const expanded = ref<Record<string, boolean>>({});
++  const loadingDirs = ref<Record<string, boolean>>({});
++  const rootLoaded = ref(false);
++  const dirError = ref<string | null>(null);
++
++  const filter = ref('');
++
++  // Embedded file preview state (a seq guard keeps a slow earlier read from
++  // overwriting a later one). `activeFilePath` tracks the selected row even
++  // while its content is still loading.
++  const activeFile = ref<FileData | null>(null);
++  const activeFilePath = ref<string | null>(null);
++  const activeFileLine = ref<number | undefined>(undefined);
++  const fileLoading = ref(false);
++  const fileError = ref<string | null>(null);
++  let fileRequestSeq = 0;
++
++  const cwd = computed(() => client.status.value.cwd);
++  const hasSession = computed(() => client.activeSessionId.value !== null);
++
++  async function loadDir(path: string): Promise<void> {
++    if (!hasSession.value) return;
++    if (loadingDirs.value[path]) return;
++    loadingDirs.value = { ...loadingDirs.value, [path]: true };
++    dirError.value = null;
++    try {
++      const items = await client.listDir(path === '' ? '.' : path);
++      childrenByPath.value = { ...childrenByPath.value, [path]: sortEntries(items) };
++      if (path === '') rootLoaded.value = true;
++    } catch {
++      // listDir already swallows daemon errors into [], so reaching here means
++      // something unexpected — surface it as a panel-level error.
++      dirError.value = path;
++    } finally {
++      const next = { ...loadingDirs.value };
++      delete next[path];
++      loadingDirs.value = next;
++    }
++  }
++
++  /** Load the workspace root once (idempotent). Called when the panel opens. */
++  async function ensureRoot(): Promise<void> {
++    if (rootLoaded.value || !hasSession.value) return;
++    await loadDir('');
++  }
++
++  async function toggleDir(entry: FsEntry): Promise<void> {
++    if (!isDir(entry)) return;
++    if (expanded.value[entry.path]) {
++      const next = { ...expanded.value };
++      delete next[entry.path];
++      expanded.value = next;
++      return;
++    }
++    expanded.value = { ...expanded.value, [entry.path]: true };
++    if (!(entry.path in childrenByPath.value)) await loadDir(entry.path);
++  }
++
++  /** Re-fetch the root and every expanded directory, keeping expansion state. */
++  async function refresh(): Promise<void> {
++    if (!hasSession.value) return;
++    const openDirs = Object.keys(expanded.value);
++    rootLoaded.value = false;
++    childrenByPath.value = {};
++    await loadDir('');
++    await Promise.all(openDirs.map((path) => loadDir(path)));
++  }
++
++  // Rendered rows. With an empty filter this is the flattened expanded tree;
++  // with a filter it is a flat list of matching entries across every loaded
++  // directory (depth 0, parent path shown by the component).
++  const rows = computed<FileTreeRow[]>(() => {
++    const query = filter.value.trim().toLowerCase();
++    if (query) {
++      const matches: FileTreeRow[] = [];
++      for (const entries of Object.values(childrenByPath.value)) {
++        for (const entry of entries) {
++          if (entry.name.toLowerCase().includes(query)) matches.push({ entry, depth: 0 });
++        }
++      }
++      return matches.toSorted((a, b) => a.entry.path.localeCompare(b.entry.path));
++    }
++    const out: FileTreeRow[] = [];
++    const walk = (entries: FsEntry[], depth: number): void => {
++      for (const entry of entries) {
++        out.push({ entry, depth });
++        if (isDir(entry) && expanded.value[entry.path]) {
++          walk(childrenByPath.value[entry.path] ?? [], depth + 1);
++        }
++      }
++    };
++    walk(childrenByPath.value[''] ?? [], 0);
++    return out;
++  });
++
++  const rootLoading = computed(() => loadingDirs.value[''] === true);
++  const rootEmpty = computed(
++    () => rootLoaded.value && (childrenByPath.value[''] ?? []).length === 0,
++  );
++
++  function parentPath(path: string): string {
++    const idx = path.lastIndexOf('/');
++    return idx === -1 ? '' : path.slice(0, idx);
++  }
++
++  async function openPath(path: string, line?: number): Promise<void> {
++    const seq = ++fileRequestSeq;
++    activeFile.value = null;
++    activeFilePath.value = path;
++    activeFileLine.value = line;
++    fileError.value = null;
++    fileLoading.value = true;
++    try {
++      const result = await client.readFileContent(path);
++      if (seq !== fileRequestSeq) return;
++      if (result) {
++        activeFile.value = { ...result, path: result.path || path };
++      } else {
++        fileError.value = path;
++      }
++    } finally {
++      if (seq === fileRequestSeq) fileLoading.value = false;
++    }
++  }
++
++  function openEntry(entry: FsEntry): void {
++    if (isDir(entry)) {
++      void toggleDir(entry);
++      return;
++    }
++    void openPath(entry.path);
++  }
++
++  function backToTree(): void {
++    fileRequestSeq += 1;
++    activeFile.value = null;
++    activeFilePath.value = null;
++    activeFileLine.value = undefined;
++    fileError.value = null;
++    fileLoading.value = false;
++  }
++
++  const downloadUrl = computed(() => {
++    const path = activeFilePath.value;
++    return path ? client.getFileDownloadUrl(path) : null;
++  });
++
++  function openActiveInEditor(): void {
++    const path = activeFilePath.value;
++    if (path) void client.openWorkspaceFile(path, activeFileLine.value);
++  }
++
++  function revealActive(): void {
++    const path = activeFilePath.value;
++    if (path) void client.revealWorkspaceFile(path);
++  }
++
++  function reset(): void {
++    fileRequestSeq += 1;
++    childrenByPath.value = {};
++    expanded.value = {};
++    loadingDirs.value = {};
++    rootLoaded.value = false;
++    dirError.value = null;
++    filter.value = '';
++    activeFile.value = null;
++    activeFilePath.value = null;
++    activeFileLine.value = undefined;
++    fileLoading.value = false;
++    fileError.value = null;
++  }
++
++  watch(client.activeSessionId, () => {
++    reset();
++  });
++
++  return {
++    cwd,
++    hasSession,
++    rows,
++    expanded,
++    loadingDirs,
++    rootLoaded,
++    rootLoading,
++    rootEmpty,
++    dirError,
++    filter,
++    activeFile,
++    activeFilePath,
++    activeFileLine,
++    fileLoading,
++    fileError,
++    downloadUrl,
++    ensureRoot,
++    toggleDir,
++    refresh,
++    openEntry,
++    openPath,
++    backToTree,
++    parentPath,
++    openActiveInEditor,
++    revealActive,
++  };
++}
++
++export type FileTree = ReturnType<typeof useFileTree>;
+diff --git a/apps/kimi-web/src/i18n/locales/en/fileTree.ts b/apps/kimi-web/src/i18n/locales/en/fileTree.ts
+index 927e1a9..137b83b 100644
+--- a/apps/kimi-web/src/i18n/locales/en/fileTree.ts
++++ b/apps/kimi-web/src/i18n/locales/en/fileTree.ts
+@@ -1 +1,14 @@
+-export default {} as const;
++export default {
++  title: 'Files',
++  open: 'Browse workspace files',
++  close: 'Close',
++  refresh: 'Refresh',
++  back: 'Back to files',
++  findPlaceholder: 'Find',
++  loading: 'Loading…',
++  empty: 'Empty directory',
++  noSession: 'Open a session to browse its workspace files',
++  truncated: 'Some entries were omitted',
++  loadDirFailed: 'Unable to load this directory',
++  loadFileFailed: 'Unable to read this file',
++} as const;
+diff --git a/apps/kimi-web/src/i18n/locales/zh/fileTree.ts b/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
+index 927e1a9..b6d6bc6 100644
+--- a/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
++++ b/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
+@@ -1 +1,14 @@
+-export default {} as const;
++export default {
++  title: '文件',
++  open: '浏览工作区文件',
++  close: '关闭',
++  refresh: '刷新',
++  back: '返回文件列表',
++  findPlaceholder: '查找',
++  loading: '加载中…',
++  empty: '空目录',
++  noSession: '打开一个会话后即可浏览其工作区文件',
++  truncated: '部分条目未显示',
++  loadDirFailed: '无法加载这个目录',
++  loadFileFailed: '无法读取这个文件',
++} as const;
+diff --git a/apps/kimi-web/src/lib/icons.ts b/apps/kimi-web/src/lib/icons.ts
+index f7d64a8..f90f680 100644
+--- a/apps/kimi-web/src/lib/icons.ts
++++ b/apps/kimi-web/src/lib/icons.ts
+@@ -85,6 +85,7 @@ import RiPauseFill from '~icons/ri/pause-fill';
+ import RiPencilLine from '~icons/ri/pencil-line';
+ import RiPlayFill from '~icons/ri/play-fill';
+ import RiQuestionLine from '~icons/ri/question-line';
++import RiRefreshLine from '~icons/ri/refresh-line';
+ import RiSortDesc from '~icons/ri/sort-desc';
+ import RiSparklingLine from '~icons/ri/sparkling-line';
+ import RiStarFill from '~icons/ri/star-fill';
+@@ -157,6 +158,7 @@ import RawPauseFill from '~icons/ri/pause-fill?raw';
+ import RawPencilLine from '~icons/ri/pencil-line?raw';
+ import RawPlayFill from '~icons/ri/play-fill?raw';
+ import RawQuestionLine from '~icons/ri/question-line?raw';
++import RawRefreshLine from '~icons/ri/refresh-line?raw';
+ import RawSortDesc from '~icons/ri/sort-desc?raw';
+ import RawSparklingLine from '~icons/ri/sparkling-line?raw';
+ import RawStarFill from '~icons/ri/star-fill?raw';
+@@ -180,6 +182,7 @@ export type IconName =
+   | 'check'
+   | 'archive'
+   | 'search'
++  | 'refresh'
+   | 'copy'
+   | 'link'
+   | 'external-link'
+@@ -266,6 +269,7 @@ export const ICONS: Record<IconName, IconEntry> = {
+   check: entry(RiCheckLine, RawCheckLine),
+   archive: entry(RiArchiveLine, RawArchiveLine),
+   search: entry(KimiSearch, RawKimiSearch),
++  refresh: entry(RiRefreshLine, RawRefreshLine),
+   copy: entry(RiFileCopyLine, RawFileCopyLine),
+   link: entry(RiLinksLine, RawLinksLine),
+   'external-link': entry(RiExternalLinkLine, RawExternalLinkLine),
+@@ -360,6 +364,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]>
+       'close',
+       'check',
+       'search',
++      'refresh',
+       'copy',
+       'link',
+       'external-link',
