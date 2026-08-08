@@ -88,7 +88,7 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x 和 0.32.0** 上都能正常工作——它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。如果未来某个 server 版本破坏了兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
+**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0 和 0.34.0** 上都能正常工作——它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。有一个代价要知道：补丁生效期间 portal 伺服的是 0.31 时期的 UI 构建，新版本里加的 web 界面功能（比如 0.34 的侧栏会话平铺视图、失败卡片一键恢复）在补丁期间看不到，不带补丁重启一次 `kimi web` 还原后即可使用。如果未来某个 server 版本破坏了兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
 
 脚本约定的目录结构如下（两个仓库在**同一个父文件夹**下）：
 
@@ -142,7 +142,7 @@ git add -N apps/kimi-web/src/components/FileTreePanel.vue apps/kimi-web/src/comp
 git diff -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-已在 macOS（arm64）上用 Kimi Code 0.31.x 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
+已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.34.0 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
 
 ## License
 
