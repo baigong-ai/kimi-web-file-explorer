@@ -66,6 +66,10 @@ server 端完全无感——它只是把缓存目录里现有的静态文件发�
 - 中英文界面（跟随 portal 的语言设置）
 - 完全遵循 portal 自身规范：右侧详情面板层、Esc 关闭、切换会话自动重置
 
+## 可选补丁
+
+- `kimi-web-plan-usage.patch` — 在输入框工具栏正中增加套餐用量胶囊：5 小时窗口与每周用量以 `43%（5h）/ 78%（1w）` 形式展示，带迷你进度条，≥80% 变警告色、≥95% 变危险色，悬停显示精确数值与重置倒计时，点击手动刷新。数据来自 server 的 `GET /api/v1/oauth/usage` 接口；非 managed 账号和手机端自动隐藏。可与 `kimi-web-files.patch` 叠加使用，也可独立应用（两者无冲突）；中英文界面齐全。用法相同：构建前 `git apply /path/to/kimi-web-plan-usage.patch`。
+
 ## 安装
 
 环境要求：Node.js ≥ 24.15、pnpm 10（与 kimi-code 本体一致），macOS 或 Linux。
@@ -126,6 +130,7 @@ pnpm --filter @moonshot-ai/kimi-web build
 | 文件 | 说明 |
 |---|---|
 | `kimi-web-files.patch` | 功能本体：针对 MoonshotAI/kimi-code 中 `apps/kimi-web` 的 git 补丁（2 个新文件、8 个文件接线，约 80 行接线 + 新的树/面板组件） |
+| `kimi-web-plan-usage.patch` | 可选附加补丁：输入栏正中的套餐用量胶囊（5 小时 / 每周），见[可选补丁](#可选补丁) |
 | `apply.sh` | 把构建产物同步到运行中 server 的资源缓存 |
 | `start-patched-web.sh` | `kimi web` 包装器：等 server 监听端口后自动执行 `apply.sh`，并带看门狗——补丁被其他 `kimi web` 启动覆盖时自动重打 |
 | `cdp-shot.mjs` | 开发工具：通过 CDP 驱动 headless Chrome，端到端截图验证面板 |
