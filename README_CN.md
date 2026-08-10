@@ -100,6 +100,8 @@ pnpm --filter @moonshot-ai/kimi-web build
 
 之所以要求"放一起"，是因为 `apply.sh` 默认按相对路径 `<本仓库>/../kimi-code-src/apps/kimi-web/dist` 找构建产物。目录结构不同也能用，显式指定即可：`KIMI_WEB_DIST=/路径/kimi-web/dist ./apply.sh`。
 
+**Windows：** 请改用 Git Bash 移植版 `apply-win.sh` / `start-patched-web-win.sh`（缓存目录取 `%LOCALAPPDATA%\kimi-code\web`，用 `cp` 代替 `rsync`，浏览器用 `cmd /c start` 打开）。一个坑：`core.autocrlf=true` 时 `.patch` 文件会被签出成 CRLF，导致 `git apply` 全部不匹配——先执行一次 `sed -i 's/\r$//' kimi-web-files.patch`（可选补丁同理）再应用。
+
 ## 使用
 
 ```bash
@@ -127,7 +129,9 @@ pnpm --filter @moonshot-ai/kimi-web build
 |---|---|
 | `kimi-web-files.patch` | 功能本体：针对 MoonshotAI/kimi-code 中 `apps/kimi-web` 的 git 补丁（2 个新文件、8 个文件接线，约 80 行接线 + 新的树/面板组件） |
 | `apply.sh` | 把构建产物同步到运行中 server 的资源缓存 |
+| `apply-win.sh` | `apply.sh` 的 Windows（Git Bash）移植版——缓存目录取 `%LOCALAPPDATA%`，用 `cp` 代替 `rsync` |
 | `start-patched-web.sh` | `kimi web` 包装器：等 server 监听端口后自动执行 `apply.sh`，并带看门狗——补丁被其他 `kimi web` 启动覆盖时自动重打 |
+| `start-patched-web-win.sh` | `start-patched-web.sh` 的 Windows（Git Bash）移植版——`curl` 探测就绪、`cmd /c start` 打开浏览器 |
 | `cdp-shot.mjs` | 开发工具：通过 CDP 驱动 headless Chrome，端到端截图验证面板 |
 | `docs/` | 截图 |
 
