@@ -66,6 +66,10 @@ The server can't tell the difference — it serves whatever static files sit in 
 - Chinese & English UI (follows the portal's language setting)
 - Follows the portal's own conventions: right-side detail layer, `Esc` to close, resets on session switch
 
+## Optional patches
+
+- `kimi-web-plan-usage.patch` — a managed-plan quota pill in the composer toolbar center: 5-hour window and weekly usage as `43% (5h) / 78% (1w)` with mini progress bars, warning color at ≥80% and danger at ≥95%, exact numbers and reset countdowns in the tooltip, click to refresh. Data comes from the server's `GET /api/v1/oauth/usage` endpoint; the pill hides itself on non-managed accounts and on phones. Applies cleanly on top of (or independently from) `kimi-web-files.patch`; Chinese & English UI included. Use it the same way — `git apply /path/to/kimi-web-plan-usage.patch` before building.
+
 ## Install
 
 Requirements: Node.js ≥ 24.15, pnpm 10 (the same toolchain as kimi-code itself), macOS or Linux.
@@ -130,6 +134,7 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 | file | what it is |
 |---|---|
 | `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 8 touched, ~80 insertions of wiring + the new tree/panel) |
+| `kimi-web-plan-usage.patch` | optional add-on: managed-plan quota pill (5h / weekly) in the composer toolbar — see [Optional patches](#optional-patches) |
 | `apply.sh` | sync the built web app into the running server's asset cache |
 | `apply-win.sh` | Windows (Git Bash) port of `apply.sh` — cache under `%LOCALAPPDATA%`, `cp` instead of `rsync` |
 | `start-patched-web.sh` | `kimi web` wrapper: waits for the server to listen, runs `apply.sh`, then watchdogs it — re-applies automatically if another `kimi web` launch wipes the patch |

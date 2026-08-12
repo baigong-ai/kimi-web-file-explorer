@@ -1,0 +1,433 @@
+diff --git a/apps/kimi-web/src/api/daemon/client.ts b/apps/kimi-web/src/api/daemon/client.ts
+index 3dd6cd7..c589e13 100644
+--- a/apps/kimi-web/src/api/daemon/client.ts
++++ b/apps/kimi-web/src/api/daemon/client.ts
+@@ -27,6 +27,7 @@ import type {
+   KimiEventConnection,
+   KimiEventHandlers,
+   KimiWebApi,
++  ManagedUsageResult,
+   OAuthLoginStartResult,
+   Page,
+   PageRequest,
+@@ -83,6 +84,8 @@ import type {
+   WireSessionSnapshot,
+   WireWorkspace,
+   WireLogoutResult,
++  WireManagedUsageResult,
++  WireUsageRow,
+ } from './wire';
+ import { DaemonEventSocket } from './ws';
+ 
+@@ -1359,6 +1362,24 @@ export class DaemonKimiWebApi implements KimiWebApi {
+     return { loggedOut: data.logged_out };
+   }
+ 
++  async getManagedUsage(provider = 'managed:kimi-code'): Promise<ManagedUsageResult> {
++    const data = await this.http.get<WireManagedUsageResult>('/oauth/usage', { provider });
++    if (data.kind === 'error') {
++      return { kind: 'error', message: data.message };
++    }
++    const mapRow = (r: WireUsageRow) => ({
++      window: r.window,
++      used: r.used,
++      limit: r.limit,
++      resetAt: r.reset_at,
++    });
++    return {
++      kind: 'ok',
++      summary: data.summary ? mapRow(data.summary) : null,
++      limits: data.limits.map(mapRow),
++    };
++  }
++
+   // -------------------------------------------------------------------------
+   // File upload
+   // -------------------------------------------------------------------------
+diff --git a/apps/kimi-web/src/api/daemon/wire.ts b/apps/kimi-web/src/api/daemon/wire.ts
+index bb87f3e..ec9f156 100644
+--- a/apps/kimi-web/src/api/daemon/wire.ts
++++ b/apps/kimi-web/src/api/daemon/wire.ts
+@@ -482,6 +482,26 @@ export interface WireLogoutResult {
+   logged_out: boolean;
+ }
+ 
++// `GET /oauth/usage` — managed-account plan usage. `summary` is the plan's
++// weekly quota; `limits` carries the rolling windows (the 5-hour limit
++// arrives as { duration: 5, unit: 'hour' }).
++export interface WireUsageRow {
++  name?: string;
++  window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
++  used: number;
++  limit: number;
++  reset_at?: string;
++}
++
++export type WireManagedUsageResult =
++  | {
++      kind: 'ok';
++      summary: WireUsageRow | null;
++      limits: WireUsageRow[];
++      extra_usage: unknown;
++    }
++  | { kind: 'error'; message: string; status?: number };
++
+ // ---------------------------------------------------------------------------
+ // File upload wire DTOs
+ // ---------------------------------------------------------------------------
+diff --git a/apps/kimi-web/src/api/types.ts b/apps/kimi-web/src/api/types.ts
+index 5413f7f..30b5457 100644
+--- a/apps/kimi-web/src/api/types.ts
++++ b/apps/kimi-web/src/api/types.ts
+@@ -802,8 +802,21 @@ export interface KimiWebApi {
+   } | null>;
+   cancelOAuthLogin(): Promise<{ cancelled: boolean; status: string }>;
+   logout(): Promise<{ loggedOut: boolean }>;
++  /** Managed-account plan usage (weekly summary + rolling windows like the 5h limit). */
++  getManagedUsage(provider?: string): Promise<ManagedUsageResult>;
+ }
+ 
++export interface PlanUsageRow {
++  window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
++  used: number;
++  limit: number;
++  resetAt?: string;
++}
++
++export type ManagedUsageResult =
++  | { kind: 'ok'; summary: PlanUsageRow | null; limits: PlanUsageRow[] }
++  | { kind: 'error'; message: string };
++
+ /** Result of `startOAuthLogin()`, mirroring the wire discriminated union. */
+ export type OAuthLoginStartResult =
+   | {
+diff --git a/apps/kimi-web/src/components/chat/Composer.vue b/apps/kimi-web/src/components/chat/Composer.vue
+index 9260789..58028da 100644
+--- a/apps/kimi-web/src/components/chat/Composer.vue
++++ b/apps/kimi-web/src/components/chat/Composer.vue
+@@ -32,6 +32,7 @@ import Icon from '../ui/Icon.vue';
+ import ContextRing from '../ui/ContextRing.vue';
+ import Tooltip from '../ui/Tooltip.vue';
+ import AttachmentChip from './AttachmentChip.vue';
++import PlanUsagePill from './PlanUsagePill.vue';
+ 
+ // ---------------------------------------------------------------------------
+ // Props & emits
+@@ -1080,6 +1081,11 @@ function selectModel(modelId: string): void {
+ 
+         </div>
+ 
++        <!-- Center: managed-plan quota (5h / weekly) -->
++        <div class="toolbar-mid">
++          <PlanUsagePill />
++        </div>
++
+         <!-- Right: ctx + model -->
+         <div class="toolbar-right">
+           <!-- Compact chip when context is high -->
+@@ -1560,6 +1566,16 @@ function selectModel(modelId: string): void {
+   overflow: hidden;
+ }
+ 
++/* Center slot — plan usage pill sits in the free space between the left and
++   right control groups. */
++.toolbar-mid {
++  flex: 1;
++  display: flex;
++  justify-content: center;
++  min-width: 0;
++  overflow: hidden;
++}
++
+ /* Permission pill */
+ .perm-pill {
+   display: inline-flex;
+@@ -2191,6 +2207,11 @@ function selectModel(modelId: string): void {
+     display: none;
+   }
+ 
++  /* Quota pill is secondary too — drop it on phones. */
++  .toolbar-mid {
++    display: none;
++  }
++
+   /* Model dropdown on mobile → anchored right with padding */
+   .model-dropdown {
+     right: 10px;
+diff --git a/apps/kimi-web/src/components/chat/PlanUsagePill.vue b/apps/kimi-web/src/components/chat/PlanUsagePill.vue
+new file mode 100644
+index 0000000..2e9c3f3
+--- /dev/null
++++ b/apps/kimi-web/src/components/chat/PlanUsagePill.vue
+@@ -0,0 +1,147 @@
++<!-- apps/kimi-web/src/components/chat/PlanUsagePill.vue -->
++<!-- Managed-plan quota pill for the composer toolbar center: 5-hour window
++     and weekly usage as `pct%（5h） / pct%（1w）`, each with a mini bar.
++     ≥80% turns warning color, ≥95% danger. Click refreshes; details and
++     reset countdowns live in the tooltip. Hides itself entirely when the
++     account is not a managed plan (composable reports unavailable). -->
++<script setup lang="ts">
++import { computed } from 'vue';
++import { useI18n } from 'vue-i18n';
++import Tooltip from '../ui/Tooltip.vue';
++import { usePlanUsage } from '../../composables/usePlanUsage';
++import type { PlanUsageRow } from '../../api/types';
++
++const { t } = useI18n();
++const { fiveHour, weekly, available, refresh } = usePlanUsage();
++
++function pctOf(row: PlanUsageRow | null): number | null {
++  if (!row || row.limit <= 0) return null;
++  return Math.min(100, Math.round((row.used / row.limit) * 100));
++}
++
++const pct5 = computed(() => pctOf(fiveHour.value));
++const pct1w = computed(() => pctOf(weekly.value));
++
++function level(pct: number | null): '' | 'warn' | 'crit' {
++  if (pct === null) return '';
++  if (pct >= 95) return 'crit';
++  if (pct >= 80) return 'warn';
++  return '';
++}
++
++// "3d 4h" / "2h 15m" / "40m" until the window resets.
++function resetCountdown(iso: string | undefined): string {
++  if (!iso) return '';
++  const ms = new Date(iso).getTime() - Date.now();
++  if (!Number.isFinite(ms) || ms <= 0) return '';
++  const mins = Math.round(ms / 60000);
++  const d = Math.floor(mins / 1440);
++  const h = Math.floor((mins % 1440) / 60);
++  const m = mins % 60;
++  if (d > 0) return `${d}d ${h}h`;
++  if (h > 0) return `${h}h ${m}m`;
++  return `${m}m`;
++}
++
++function tooltipRow(labelKey: string, row: PlanUsageRow | null): string | null {
++  if (!row) return null;
++  const base = `${t(labelKey)} ${row.used}/${row.limit}`;
++  const cd = resetCountdown(row.resetAt);
++  return cd ? `${base} · ${t('planUsage.resetIn', { time: cd })}` : base;
++}
++
++const tooltip = computed(() =>
++  [
++    tooltipRow('planUsage.fiveHour', fiveHour.value),
++    tooltipRow('planUsage.weekly', weekly.value),
++    t('planUsage.refreshHint'),
++  ]
++    .filter(Boolean)
++    .join(' · '),
++);
++</script>
++
++<template>
++  <Tooltip v-if="available && (pct5 !== null || pct1w !== null)" :text="tooltip" :max-width="360">
++    <button type="button" class="usage-pill" @click="refresh">
++      <span v-if="pct5 !== null" class="u-seg">
++        <span class="u-bar"><span class="u-fill" :class="level(pct5)" :style="{ width: pct5 + '%' }" /></span>
++        <span class="u-num" :class="level(pct5)">{{ t('planUsage.seg', { pct: pct5, win: '5h' }) }}</span>
++      </span>
++      <span v-if="pct5 !== null && pct1w !== null" class="u-sep">/</span>
++      <span v-if="pct1w !== null" class="u-seg">
++        <span class="u-bar"><span class="u-fill" :class="level(pct1w)" :style="{ width: pct1w + '%' }" /></span>
++        <span class="u-num" :class="level(pct1w)">{{ t('planUsage.seg', { pct: pct1w, win: '1w' }) }}</span>
++      </span>
++    </button>
++  </Tooltip>
++</template>
++
++<style scoped>
++.usage-pill {
++  display: inline-flex;
++  align-items: center;
++  gap: 7px;
++  padding: 2px 7px;
++  border: none;
++  border-radius: 6px;
++  background: transparent;
++  font-size: var(--ui-font-size);
++  line-height: var(--leading-normal);
++  font-family: var(--font-ui);
++  font-weight: var(--weight-medium);
++  color: var(--dim);
++  cursor: pointer;
++  user-select: none;
++  transition: background 0.1s;
++  white-space: nowrap;
++}
++.usage-pill:hover {
++  background: var(--color-surface-sunken);
++}
++
++.u-seg {
++  display: inline-flex;
++  align-items: center;
++  gap: 5px;
++}
++.u-bar {
++  width: 26px;
++  height: 4px;
++  border-radius: var(--radius-full);
++  background: var(--color-line);
++  overflow: hidden;
++}
++.u-fill {
++  display: block;
++  height: 100%;
++  border-radius: var(--radius-full);
++  background: var(--color-text-faint);
++  transition: width 0.3s;
++}
++.u-fill.warn {
++  background: var(--color-warning);
++}
++.u-fill.crit {
++  background: var(--color-danger);
++}
++.u-num {
++  font-variant-numeric: tabular-nums;
++}
++.u-num.warn {
++  color: var(--color-warning);
++}
++.u-num.crit {
++  color: var(--color-danger);
++}
++.u-sep {
++  color: var(--faint);
++}
++
++/* Narrow columns: drop the mini bars first, keep the numbers. */
++@media (max-width: 980px) {
++  .u-bar {
++    display: none;
++  }
++}
++</style>
+diff --git a/apps/kimi-web/src/composables/usePlanUsage.ts b/apps/kimi-web/src/composables/usePlanUsage.ts
+new file mode 100644
+index 0000000..5ddbd37
+--- /dev/null
++++ b/apps/kimi-web/src/composables/usePlanUsage.ts
+@@ -0,0 +1,56 @@
++// apps/kimi-web/src/composables/usePlanUsage.ts
++// Managed-account plan usage (5-hour window + weekly quota) for the composer
++// toolbar pill. Module-level singleton: one poller shared by all consumers,
++// refreshed every 60 s and whenever the tab regains focus. Unavailable
++// (non-managed account, server without the endpoint) → `available` stays
++// false and the pill hides itself.
++import { ref } from 'vue';
++import { getKimiWebApi } from '../api';
++import type { PlanUsageRow } from '../api/types';
++
++const POLL_MS = 60_000;
++
++const fiveHour = ref<PlanUsageRow | null>(null);
++const weekly = ref<PlanUsageRow | null>(null);
++const available = ref(false);
++const loading = ref(false);
++
++let started = false;
++
++async function refresh(): Promise<void> {
++  if (loading.value) return;
++  loading.value = true;
++  try {
++    const result = await getKimiWebApi().getManagedUsage();
++    if (result.kind !== 'ok') {
++      available.value = false;
++      return;
++    }
++    fiveHour.value =
++      result.limits.find((r) => r.window?.duration === 5 && r.window.unit === 'hour') ?? null;
++    weekly.value = result.summary;
++    available.value = fiveHour.value !== null || weekly.value !== null;
++  } catch {
++    // Endpoint missing or auth not managed — treat as unavailable, keep polling.
++    available.value = false;
++  } finally {
++    loading.value = false;
++  }
++}
++
++function onVisible(): void {
++  if (!document.hidden) void refresh();
++}
++
++function start(): void {
++  if (started) return;
++  started = true;
++  void refresh();
++  setInterval(() => void refresh(), POLL_MS);
++  document.addEventListener('visibilitychange', onVisible);
++}
++
++export function usePlanUsage() {
++  start();
++  return { fiveHour, weekly, available, loading, refresh };
++}
+diff --git a/apps/kimi-web/src/i18n/locales/en/planUsage.ts b/apps/kimi-web/src/i18n/locales/en/planUsage.ts
+new file mode 100644
+index 0000000..12122b1
+--- /dev/null
++++ b/apps/kimi-web/src/i18n/locales/en/planUsage.ts
+@@ -0,0 +1,7 @@
++export default {
++  fiveHour: '5-hour usage',
++  weekly: 'Weekly usage',
++  seg: '{pct}% ({win})',
++  resetIn: 'resets in {time}',
++  refreshHint: 'Click to refresh',
++} as const;
+diff --git a/apps/kimi-web/src/i18n/locales/index.ts b/apps/kimi-web/src/i18n/locales/index.ts
+index 08a6d76..3e4fc4c 100644
+--- a/apps/kimi-web/src/i18n/locales/index.ts
++++ b/apps/kimi-web/src/i18n/locales/index.ts
+@@ -23,6 +23,7 @@ import en_tools from './en/tools';
+ import en_layout from './en/layout';
+ import en_mobile from './en/mobile';
+ import en_theme from './en/theme';
++import en_planUsage from './en/planUsage';
+ 
+ import zh_common from './zh/common';
+ import zh_app from './zh/app';
+@@ -49,6 +50,7 @@ import zh_tools from './zh/tools';
+ import zh_layout from './zh/layout';
+ import zh_mobile from './zh/mobile';
+ import zh_theme from './zh/theme';
++import zh_planUsage from './zh/planUsage';
+ import en_onboarding from './en/onboarding';
+ import zh_onboarding from './zh/onboarding';
+ import en_settings from './en/settings';
+@@ -85,6 +87,7 @@ export const messages = {
+     layout: en_layout,
+     mobile: en_mobile,
+     theme: en_theme,
++    planUsage: en_planUsage,
+     onboarding: en_onboarding,
+     settings: en_settings,
+     header: en_header,
+@@ -116,6 +119,7 @@ export const messages = {
+     layout: zh_layout,
+     mobile: zh_mobile,
+     theme: zh_theme,
++    planUsage: zh_planUsage,
+     onboarding: zh_onboarding,
+     settings: zh_settings,
+     header: zh_header,
+diff --git a/apps/kimi-web/src/i18n/locales/zh/planUsage.ts b/apps/kimi-web/src/i18n/locales/zh/planUsage.ts
+new file mode 100644
+index 0000000..a755bf2
+--- /dev/null
++++ b/apps/kimi-web/src/i18n/locales/zh/planUsage.ts
+@@ -0,0 +1,7 @@
++export default {
++  fiveHour: '5小时用量',
++  weekly: '每周用量',
++  seg: '{pct}%（{win}）',
++  resetIn: '{time}后重置',
++  refreshHint: '点击刷新',
++} as const;
