@@ -100,6 +100,8 @@ some-folder/
 
 "Next to each other" matters because `apply.sh` looks for the build output at `<this-repo>/../kimi-code-src/apps/kimi-web/dist` by default. Any other layout works too — just point the scripts at it explicitly: `KIMI_WEB_DIST=/path/to/kimi-web/dist ./apply.sh`.
 
+**Windows:** use the Git Bash ports `apply-win.sh` / `start-patched-web-win.sh` instead (cache dir under `%LOCALAPPDATA%\kimi-code\web`, `cp` instead of `rsync`, browser opened via `cmd /c start`). One gotcha: with `core.autocrlf=true` the `.patch` files check out as CRLF and `git apply` rejects them — convert once with `sed -i 's/\r$//' kimi-web-files.patch` (same for the optional patch) before applying.
+
 ## Usage
 
 ```bash
@@ -129,7 +131,9 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 |---|---|
 | `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 8 touched, ~80 insertions of wiring + the new tree/panel) |
 | `apply.sh` | sync the built web app into the running server's asset cache |
+| `apply-win.sh` | Windows (Git Bash) port of `apply.sh` — cache under `%LOCALAPPDATA%`, `cp` instead of `rsync` |
 | `start-patched-web.sh` | `kimi web` wrapper: waits for the server to listen, runs `apply.sh`, then watchdogs it — re-applies automatically if another `kimi web` launch wipes the patch |
+| `start-patched-web-win.sh` | Windows (Git Bash) port of `start-patched-web.sh` — `curl` readiness probe, browser via `cmd /c start` |
 | `cdp-shot.mjs` | dev tool: drives headless Chrome over CDP to screenshot the panel end-to-end |
 | `docs/` | screenshots |
 
