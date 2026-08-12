@@ -68,7 +68,7 @@ server 端完全无感——它只是把缓存目录里现有的静态文件发�
 
 ## 安装
 
-环境要求：Node.js ≥ 24.15、pnpm 10（与 kimi-code 本体一致），macOS 或 Linux。
+环境要求：Node.js ≥ 24.15、pnpm 10（与 kimi-code 本体一致），macOS、Linux，或 Windows（通过 Git Bash，使用 `*-win.sh` 脚本，感谢 [@chulongYang](https://github.com/chulongYang)）。
 
 ```bash
 # 1. 克隆官方源码并检出 web UI 代码。

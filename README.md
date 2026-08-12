@@ -68,7 +68,7 @@ The server can't tell the difference — it serves whatever static files sit in 
 
 ## Install
 
-Requirements: Node.js ≥ 24.15, pnpm 10 (the same toolchain as kimi-code itself), macOS or Linux.
+Requirements: Node.js ≥ 24.15, pnpm 10 (the same toolchain as kimi-code itself), macOS, Linux, or Windows (via Git Bash — use the `*-win.sh` scripts, thanks [@chulongYang](https://github.com/chulongYang)).
 
 ```bash
 # 1. Clone the official source and check out the web UI code.
