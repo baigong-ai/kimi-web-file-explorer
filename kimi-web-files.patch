@@ -46,12 +46,46 @@ index 5708bcc..ad6f475 100644
      </aside>
  
      <!-- Internal-build tag — pinned to the app's bottom-right corner, above
+diff --git a/apps/kimi-web/src/api/daemon/client.ts b/apps/kimi-web/src/api/daemon/client.ts
+index 3dd6cd7..00c65c0 100644
+--- a/apps/kimi-web/src/api/daemon/client.ts
++++ b/apps/kimi-web/src/api/daemon/client.ts
+@@ -905,7 +905,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
+ 
+   async listDirectory(
+     sessionId: string,
+-    input: { path?: string; depth?: number; includeGitStatus?: boolean },
++    input: { path?: string; depth?: number; includeGitStatus?: boolean; showHidden?: boolean },
+   ): Promise<{
+     items: FsEntry[];
+     childrenByPath?: Record<string, FsEntry[]>;
+@@ -915,6 +915,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
+     if (input.path !== undefined) body['path'] = input.path;
+     if (input.depth !== undefined) body['depth'] = input.depth;
+     if (input.includeGitStatus !== undefined) body['include_git_status'] = input.includeGitStatus;
++    if (input.showHidden !== undefined) body['show_hidden'] = input.showHidden;
+     const data = await this.http.post<WireListDirectoryResult>(
+       `/sessions/${encodeURIComponent(sessionId)}/fs:list`,
+       body,
+diff --git a/apps/kimi-web/src/api/types.ts b/apps/kimi-web/src/api/types.ts
+index 5413f7f..c593aab 100644
+--- a/apps/kimi-web/src/api/types.ts
++++ b/apps/kimi-web/src/api/types.ts
+@@ -745,7 +745,7 @@ export interface KimiWebApi {
+   createTerminal(sessionId: string, input?: { cwd?: string; shell?: string; cols?: number; rows?: number }): Promise<AppTerminal>;
+   getTerminal(sessionId: string, terminalId: string): Promise<AppTerminal>;
+   closeTerminal(sessionId: string, terminalId: string): Promise<{ closed: true }>;
+-  listDirectory(sessionId: string, input: { path?: string; depth?: number; includeGitStatus?: boolean }): Promise<{ items: FsEntry[]; childrenByPath?: Record<string, FsEntry[]>; truncated: boolean }>;
++  listDirectory(sessionId: string, input: { path?: string; depth?: number; includeGitStatus?: boolean; showHidden?: boolean }): Promise<{ items: FsEntry[]; childrenByPath?: Record<string, FsEntry[]>; truncated: boolean }>;
+   readFile(sessionId: string, input: { path: string; offset?: number; length?: number }): Promise<{ path: string; content: string; encoding: 'utf-8' | 'base64'; size: number; truncated: boolean; etag: string; mime: string; languageId?: string; lineCount?: number; isBinary: boolean }>;
+   /** Search files in a workspace (no session required) — POST /workspace/fs:search. `workspace` accepts a registered workspace id or an absolute root. */
+   searchFiles(workspace: string, input: { query: string; limit?: number }): Promise<{ items: Array<{ path: string; name: string; kind: FsKind; score: number; matchPositions: number[] }>; truncated: boolean }>;
 diff --git a/apps/kimi-web/src/components/FileTreePanel.vue b/apps/kimi-web/src/components/FileTreePanel.vue
 new file mode 100644
-index 0000000..6a6bd04
+index 0000000..f1136a8
 --- /dev/null
 +++ b/apps/kimi-web/src/components/FileTreePanel.vue
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,360 @@
 +<!-- apps/kimi-web/src/components/FileTreePanel.vue -->
 +<!-- Workspace file browser in the right-side detail layer ('files' slot):
 +     lazy-loaded directory tree with a name filter; clicking a file swaps the
@@ -90,6 +124,7 @@ index 0000000..6a6bd04
 +  rootLoading,
 +  dirError,
 +  filter,
++  showHidden,
 +  activeFile,
 +  activeFilePath,
 +  activeFileLine,
@@ -120,6 +155,17 @@ index 0000000..6a6bd04
 +      :close-label="t('fileTree.close')"
 +      @close="emit('close')"
 +    >
++      <Tooltip :text="showHidden ? t('fileTree.hideHidden') : t('fileTree.showHidden')">
++        <IconButton
++          size="sm"
++          :label="showHidden ? t('fileTree.hideHidden') : t('fileTree.showHidden')"
++          :disabled="!hasSession"
++          :class="{ 'ft-eye-on': showHidden }"
++          @click="tree.toggleShowHidden()"
++        >
++          <Icon :name="showHidden ? 'eye' : 'eye-off'" size="sm" />
++        </IconButton>
++      </Tooltip>
 +      <Tooltip :text="t('fileTree.refresh')">
 +        <IconButton
 +          size="sm"
@@ -244,6 +290,12 @@ index 0000000..6a6bd04
 +  text-align: center;
 +  font: var(--text-base) var(--font-ui);
 +  color: var(--color-text-muted);
++}
++
++/* Hidden-files toggle (lands on the IconButton root via class fall-through) */
++.ft-eye-on {
++  color: var(--color-text);
++  background: color-mix(in srgb, var(--color-text) 8%, transparent);
 +}
 +
 +/* Find box ------------------------------------------------------------ */
@@ -443,6 +495,25 @@ index 0464bea..bf97a8c 100644
        @copy-all="chatPaneRef?.copyConversation()"
        @copy-final-summary="chatPaneRef?.copyFinalSummary()"
        @open-pr="pr && emit('openPr', pr.url)"
+diff --git a/apps/kimi-web/src/composables/client/useWorkspaceState.ts b/apps/kimi-web/src/composables/client/useWorkspaceState.ts
+index 42e01e8..7116124 100644
+--- a/apps/kimi-web/src/composables/client/useWorkspaceState.ts
++++ b/apps/kimi-web/src/composables/client/useWorkspaceState.ts
+@@ -2601,12 +2601,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
+    * List directory contents for the active session.
+    * Returns FsEntry[] — defensive, returns [] on error or no active session.
+    */
+-  async function listDir(path: string): Promise<FsEntry[]> {
++  async function listDir(path: string, opts?: { showHidden?: boolean }): Promise<FsEntry[]> {
+     const sid = rawState.activeSessionId;
+     if (!sid) return [];
+     try {
+       const api = getKimiWebApi();
+-      const result = await api.listDirectory(sid, { path, includeGitStatus: true });
++      const result = await api.listDirectory(sid, { path, includeGitStatus: true, showHidden: opts?.showHidden });
+       return result.items;
+     } catch {
+       return [];
 diff --git a/apps/kimi-web/src/composables/useDetailPanel.ts b/apps/kimi-web/src/composables/useDetailPanel.ts
 index 5a8dc93..be9033c 100644
 --- a/apps/kimi-web/src/composables/useDetailPanel.ts
@@ -510,10 +581,10 @@ index f61d98d..6c24829 100644
   *  `ms://…` has no local bytes and only yields a broken player, so it's treated
 diff --git a/apps/kimi-web/src/composables/useFileTree.ts b/apps/kimi-web/src/composables/useFileTree.ts
 new file mode 100644
-index 0000000..e1dd156
+index 0000000..ba6da4f
 --- /dev/null
 +++ b/apps/kimi-web/src/composables/useFileTree.ts
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,255 @@
 +// apps/kimi-web/src/composables/useFileTree.ts
 +// Workspace file tree backing the right-side 'files' detail panel: lazy
 +// directory loading via client.listDir (workspace-relative paths), a name
@@ -557,6 +628,10 @@ index 0000000..e1dd156
 +
 +  const filter = ref('');
 +
++  // Whether dotfiles are listed. Server-side fs:list defaults show_hidden to
++  // false; toggling re-fetches every loaded directory.
++  const showHidden = ref(false);
++
 +  // Embedded file preview state (a seq guard keeps a slow earlier read from
 +  // overwriting a later one). `activeFilePath` tracks the selected row even
 +  // while its content is still loading.
@@ -576,7 +651,7 @@ index 0000000..e1dd156
 +    loadingDirs.value = { ...loadingDirs.value, [path]: true };
 +    dirError.value = null;
 +    try {
-+      const items = await client.listDir(path === '' ? '.' : path);
++      const items = await client.listDir(path === '' ? '.' : path, { showHidden: showHidden.value });
 +      childrenByPath.value = { ...childrenByPath.value, [path]: sortEntries(items) };
 +      if (path === '') rootLoaded.value = true;
 +    } catch {
@@ -616,6 +691,12 @@ index 0000000..e1dd156
 +    childrenByPath.value = {};
 +    await loadDir('');
 +    await Promise.all(openDirs.map((path) => loadDir(path)));
++  }
++
++  /** Flip dotfile visibility and reload the tree with the new setting. */
++  async function toggleShowHidden(): Promise<void> {
++    showHidden.value = !showHidden.value;
++    await refresh();
 +  }
 +
 +  // Rendered rows. With an empty filter this is the flattened expanded tree;
@@ -715,6 +796,7 @@ index 0000000..e1dd156
 +    rootLoaded.value = false;
 +    dirError.value = null;
 +    filter.value = '';
++    showHidden.value = false;
 +    activeFile.value = null;
 +    activeFilePath.value = null;
 +    activeFileLine.value = undefined;
@@ -737,6 +819,7 @@ index 0000000..e1dd156
 +    rootEmpty,
 +    dirError,
 +    filter,
++    showHidden,
 +    activeFile,
 +    activeFilePath,
 +    activeFileLine,
@@ -746,6 +829,7 @@ index 0000000..e1dd156
 +    ensureRoot,
 +    toggleDir,
 +    refresh,
++    toggleShowHidden,
 +    openEntry,
 +    openPath,
 +    backToTree,
@@ -757,16 +841,18 @@ index 0000000..e1dd156
 +
 +export type FileTree = ReturnType<typeof useFileTree>;
 diff --git a/apps/kimi-web/src/i18n/locales/en/fileTree.ts b/apps/kimi-web/src/i18n/locales/en/fileTree.ts
-index 927e1a9..137b83b 100644
+index 927e1a9..e61db85 100644
 --- a/apps/kimi-web/src/i18n/locales/en/fileTree.ts
 +++ b/apps/kimi-web/src/i18n/locales/en/fileTree.ts
-@@ -1 +1,14 @@
+@@ -1 +1,16 @@
 -export default {} as const;
 +export default {
 +  title: 'Files',
 +  open: 'Browse workspace files',
 +  close: 'Close',
 +  refresh: 'Refresh',
++  showHidden: 'Show hidden files',
++  hideHidden: 'Hide hidden files',
 +  back: 'Back to files',
 +  findPlaceholder: 'Find',
 +  loading: 'Loading…',
@@ -777,16 +863,18 @@ index 927e1a9..137b83b 100644
 +  loadFileFailed: 'Unable to read this file',
 +} as const;
 diff --git a/apps/kimi-web/src/i18n/locales/zh/fileTree.ts b/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
-index 927e1a9..b6d6bc6 100644
+index 927e1a9..aa7e27d 100644
 --- a/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
 +++ b/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
-@@ -1 +1,14 @@
+@@ -1 +1,16 @@
 -export default {} as const;
 +export default {
 +  title: '文件',
 +  open: '浏览工作区文件',
 +  close: '关闭',
 +  refresh: '刷新',
++  showHidden: '显示隐藏文件',
++  hideHidden: '不显示隐藏文件',
 +  back: '返回文件列表',
 +  findPlaceholder: '查找',
 +  loading: '加载中…',
@@ -797,10 +885,19 @@ index 927e1a9..b6d6bc6 100644
 +  loadFileFailed: '无法读取这个文件',
 +} as const;
 diff --git a/apps/kimi-web/src/lib/icons.ts b/apps/kimi-web/src/lib/icons.ts
-index f7d64a8..f90f680 100644
+index f7d64a8..6126509 100644
 --- a/apps/kimi-web/src/lib/icons.ts
 +++ b/apps/kimi-web/src/lib/icons.ts
-@@ -85,6 +85,7 @@ import RiPauseFill from '~icons/ri/pause-fill';
+@@ -62,6 +62,8 @@ import RiDraggable from '~icons/ri/draggable';
+ import RiEqualizerLine from '~icons/ri/equalizer-line';
+ import RiExpandDiagonalLine from '~icons/ri/expand-diagonal-line';
+ import RiExternalLinkLine from '~icons/ri/external-link-line';
++import RiEyeLine from '~icons/ri/eye-line';
++import RiEyeOffLine from '~icons/ri/eye-off-line';
+ import RiFileAddLine from '~icons/ri/file-add-line';
+ import RiFileCopyLine from '~icons/ri/file-copy-line';
+ import RiFileEditLine from '~icons/ri/file-edit-line';
+@@ -85,6 +87,7 @@ import RiPauseFill from '~icons/ri/pause-fill';
  import RiPencilLine from '~icons/ri/pencil-line';
  import RiPlayFill from '~icons/ri/play-fill';
  import RiQuestionLine from '~icons/ri/question-line';
@@ -808,7 +905,16 @@ index f7d64a8..f90f680 100644
  import RiSortDesc from '~icons/ri/sort-desc';
  import RiSparklingLine from '~icons/ri/sparkling-line';
  import RiStarFill from '~icons/ri/star-fill';
-@@ -157,6 +158,7 @@ import RawPauseFill from '~icons/ri/pause-fill?raw';
+@@ -134,6 +137,8 @@ import RawDraggable from '~icons/ri/draggable?raw';
+ import RawEqualizerLine from '~icons/ri/equalizer-line?raw';
+ import RawExpandDiagonalLine from '~icons/ri/expand-diagonal-line?raw';
+ import RawExternalLinkLine from '~icons/ri/external-link-line?raw';
++import RawEyeLine from '~icons/ri/eye-line?raw';
++import RawEyeOffLine from '~icons/ri/eye-off-line?raw';
+ import RawFileAddLine from '~icons/ri/file-add-line?raw';
+ import RawFileCopyLine from '~icons/ri/file-copy-line?raw';
+ import RawFileEditLine from '~icons/ri/file-edit-line?raw';
+@@ -157,6 +162,7 @@ import RawPauseFill from '~icons/ri/pause-fill?raw';
  import RawPencilLine from '~icons/ri/pencil-line?raw';
  import RawPlayFill from '~icons/ri/play-fill?raw';
  import RawQuestionLine from '~icons/ri/question-line?raw';
@@ -816,7 +922,7 @@ index f7d64a8..f90f680 100644
  import RawSortDesc from '~icons/ri/sort-desc?raw';
  import RawSparklingLine from '~icons/ri/sparkling-line?raw';
  import RawStarFill from '~icons/ri/star-fill?raw';
-@@ -180,6 +182,7 @@ export type IconName =
+@@ -180,9 +186,12 @@ export type IconName =
    | 'check'
    | 'archive'
    | 'search'
@@ -824,7 +930,12 @@ index f7d64a8..f90f680 100644
    | 'copy'
    | 'link'
    | 'external-link'
-@@ -266,6 +269,7 @@ export const ICONS: Record<IconName, IconEntry> = {
++  | 'eye'
++  | 'eye-off'
+   | 'download'
+   | 'undo'
+   | 'send'
+@@ -266,9 +275,12 @@ export const ICONS: Record<IconName, IconEntry> = {
    check: entry(RiCheckLine, RawCheckLine),
    archive: entry(RiArchiveLine, RawArchiveLine),
    search: entry(KimiSearch, RawKimiSearch),
@@ -832,7 +943,12 @@ index f7d64a8..f90f680 100644
    copy: entry(RiFileCopyLine, RawFileCopyLine),
    link: entry(RiLinksLine, RawLinksLine),
    'external-link': entry(RiExternalLinkLine, RawExternalLinkLine),
-@@ -360,6 +364,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]>
++  eye: entry(RiEyeLine, RawEyeLine),
++  'eye-off': entry(RiEyeOffLine, RawEyeOffLine),
+   download: entry(RiDownloadLine, RawDownloadLine),
+   undo: entry(RiArrowGoBackLine, RawArrowGoBackLine),
+   send: entry(RiArrowUpLine, RawArrowUpLine),
+@@ -360,6 +372,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]>
        'close',
        'check',
        'search',
@@ -840,3 +956,12 @@ index f7d64a8..f90f680 100644
        'copy',
        'link',
        'external-link',
+@@ -404,6 +417,8 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]>
+       'file-plus',
+       'file-off',
+       'image-off',
++      'eye',
++      'eye-off',
+       'code',
+       'terminal',
+       'pencil',

@@ -39,14 +39,14 @@ MoonshotAI/kimi-code（apps/kimi-web 源码）
                 │
                 pnpm build（与官方相同的 Vite 工具链）
                 │
-                dist/  =  官方 web UI + Files 面板（约 99% 相同，+665 行）
+                dist/  =  官方 web UI + Files 面板（约 99% 相同，+715 行）
                 │
                 apply.sh：把 dist/ rsync 到【运行中】server 的 dist-web
                 │
                 ► server 开始伺服补丁版界面，直到进程结束
 ```
 
-1. 克隆官方源码，`git apply` 打上 `kimi-web-files.patch`——整个功能就是一个干净的 diff（2 个新文件 + 8 处小接线）。
+1. 克隆官方源码，`git apply` 打上 `kimi-web-files.patch`——整个功能就是一个干净的 diff（2 个新文件 + 11 处小接线）。
 2. 用和官方相同的工具链构建。得到的 `dist/` 是**完整**的 web UI——官方版加上 Files 面板。
 3. `apply.sh` 把这份构建产物整体替换到运行中 server 的资源缓存目录。时机是关键：二进制在**每次启动时**都会重新解压（即还原）官方资源，但运行中的 server 是按请求从磁盘读文件的。所以补丁必须在 server 启动**之后**应用。注意同一个版本的所有 `kimi web` 进程共享同一个缓存目录——补丁对所有同版本 portal 同时生效，也会被任何一次新的 `kimi web` 启动一并还原（`start-patched-web.sh` 的看门狗会发现并自动重打）。
 
@@ -62,6 +62,7 @@ server 端完全无感——它只是把缓存目录里现有的静态文件发�
 
 - 会话工作目录的文件树，目录点击时才懒加载
 - Find 过滤框按文件名筛选；有 git 改动的条目带标记点
+- 面板头部的隐藏文件开关（眼睛图标）：`.gitignore` 这类点开头文件默认隐藏，点一下即可列出，走服务端的 `show_hidden` 列表选项
 - 面板内预览复用官方 FilePreview 组件：markdown 渲染、代码高亮、图片、PDF、CSV 等，支持下载 / 在编辑器打开 / 在访达中显示
 - 中英文界面（跟随 portal 的语言设置）
 - 完全遵循 portal 自身规范：右侧详情面板层、Esc 关闭、切换会话自动重置
@@ -127,7 +128,7 @@ pnpm --filter @moonshot-ai/kimi-web build
 
 | 文件 | 说明 |
 |---|---|
-| `kimi-web-files.patch` | 功能本体：针对 MoonshotAI/kimi-code 中 `apps/kimi-web` 的 git 补丁（2 个新文件、8 个文件接线，约 80 行接线 + 新的树/面板组件） |
+| `kimi-web-files.patch` | 功能本体：针对 MoonshotAI/kimi-code 中 `apps/kimi-web` 的 git 补丁（2 个新文件、11 个文件接线，约 100 行接线 + 新的树/面板组件） |
 | `apply.sh` | 把构建产物同步到运行中 server 的资源缓存 |
 | `apply-win.sh` | `apply.sh` 的 Windows（Git Bash）移植版——缓存目录取 `%LOCALAPPDATA%`，用 `cp` 代替 `rsync` |
 | `start-patched-web.sh` | `kimi web` 包装器：等 server 监听端口后自动执行 `apply.sh`，并带看门狗——补丁被其他 `kimi web` 启动覆盖时自动重打 |
@@ -142,8 +143,7 @@ cd kimi-code-src
 pnpm --filter @moonshot-ai/kimi-web run typecheck   # vue-tsc
 pnpm --filter @moonshot-ai/kimi-web build           # 改动后重新构建
 # 重新生成可分发的补丁：
-git add -N apps/kimi-web/src/components/FileTreePanel.vue apps/kimi-web/src/composables/useFileTree.ts
-git diff -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
+git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
 已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.34.0 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。

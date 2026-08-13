@@ -39,14 +39,14 @@ MoonshotAI/kimi-code (apps/kimi-web source)
                 │
                 pnpm build (same Vite toolchain)
                 │
-                dist/  =  stock web UI + Files panel   (≈99% identical, +665 lines)
+                dist/  =  stock web UI + Files panel   (≈99% identical, +715 lines)
                 │
                 apply.sh: rsync dist/ → dist-web of the RUNNING server
                 │
                 ► server now serves the patched UI until it stops
 ```
 
-1. Clone the official source and apply `kimi-web-files.patch` — the whole feature as a clean diff (2 new files, 8 small wiring edits).
+1. Clone the official source and apply `kimi-web-files.patch` — the whole feature as a clean diff (2 new files, 11 small wiring edits).
 2. Build with the same toolchain upstream uses. The resulting `dist/` is the **complete** web UI — stock plus the Files panel.
 3. `apply.sh` replaces the running server's asset cache with this build. Timing matters: the binary re-extracts (and thus restores) stock assets at **every launch**, but a running server reads assets from disk per request. So the patch must be applied **after** the server has started. Note that all `kimi web` processes of the same version share one cache directory — the patch takes effect for every same-version portal at once, and any single new `kimi web` launch reverts all of them (the watchdog in `start-patched-web.sh` detects this and re-applies automatically).
 
@@ -62,6 +62,7 @@ The server can't tell the difference — it serves whatever static files sit in 
 
 - File tree of the session's workspace root, directories loaded lazily on expand
 - `Find` box to filter loaded files by name; git-change marker on modified entries
+- Hidden-files toggle (eye button in the panel header): dotfiles like `.gitignore` are hidden by default, one click lists them — works through the server's `show_hidden` fs-list option
 - In-panel preview via the stock FilePreview component: rendered markdown, syntax-highlighted code, images, PDF, CSV… with download / open-in-editor / reveal-in-Finder actions
 - Chinese & English UI (follows the portal's language setting)
 - Follows the portal's own conventions: right-side detail layer, `Esc` to close, resets on session switch
@@ -129,7 +130,7 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 
 | file | what it is |
 |---|---|
-| `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 8 touched, ~80 insertions of wiring + the new tree/panel) |
+| `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 11 touched, ~100 insertions of wiring + the new tree/panel) |
 | `apply.sh` | sync the built web app into the running server's asset cache |
 | `apply-win.sh` | Windows (Git Bash) port of `apply.sh` — cache under `%LOCALAPPDATA%`, `cp` instead of `rsync` |
 | `start-patched-web.sh` | `kimi web` wrapper: waits for the server to listen, runs `apply.sh`, then watchdogs it — re-applies automatically if another `kimi web` launch wipes the patch |
@@ -144,8 +145,7 @@ cd kimi-code-src
 pnpm --filter @moonshot-ai/kimi-web run typecheck   # vue-tsc
 pnpm --filter @moonshot-ai/kimi-web build           # rebuild after changes
 # regenerate the distributable patch:
-git add -N apps/kimi-web/src/components/FileTreePanel.vue apps/kimi-web/src/composables/useFileTree.ts
-git diff -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
+git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
 Verified on macOS (arm64) with Kimi Code 0.31.x through 0.34.0. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
