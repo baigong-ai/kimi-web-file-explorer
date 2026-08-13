@@ -119,6 +119,8 @@ some-folder/
 
 Then click the new folder icon in the chat header. `start-patched-web.sh` opens the browser only *after* the patch has fully landed, and adds a timestamp query to the URL so the browser re-fetches the entry HTML — the kimi server sends no cache headers, so Safari heuristically caches the old entry page, which can point at a bundle that has since been replaced and render a blank page. If you ever do hit a blank page, one hard refresh (Cmd+Shift+R) fixes it.
 
+**Prefer the stock portal? Just use it — nothing to undo.** Nothing in this project runs by itself: `apply.sh` only executes when you invoke it manually (or via the watchdog inside `start-patched-web.sh`). It never hooks into `kimi web` startup. So whenever you want the official portal, start it the usual way — `kimi web`, or `/web` in the TUI. At every launch the `kimi` binary re-extracts its embedded, sha256-verified stock assets into the cache directory, which means two things: the portal you get is 100% official, and that very launch wipes the patch for every same-version portal sharing the cache. There is nothing to uninstall and no residue. Want the Files panel back later? Run `./apply.sh` once (or start via `start-patched-web.sh`).
+
 **Running several portals at once:** all `kimi web` processes of the same version share one dist-web cache directory — whether started via `kimi web`, `start-patched-web.sh`, or `/web` in the TUI. Two direct consequences:
 
 - Once patched, **every** running same-version portal immediately has the Files panel (including one opened via `/web`) — no need to patch each one.

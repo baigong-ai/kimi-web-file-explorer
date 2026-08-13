@@ -117,6 +117,8 @@ pnpm --filter @moonshot-ai/kimi-web build
 
 然后点聊天页 header 右侧新增的文件夹图标即可。`start-patched-web.sh` 会在补丁完整落地**之后**才打开浏览器，并在 URL 上加时间戳参数，强制浏览器重新拉取入口 HTML——kimi server 不发任何缓存头，Safari 会启发式缓存旧入口，可能引用到已被替换掉的 bundle，表现为白屏。如果个别情况下还是白屏，硬刷新（Cmd+Shift+R）一次即可。
 
+**想用原版 portal？直接用就行，不需要任何还原操作。** 本项目没有任何东西会自动运行：`apply.sh` 只在你手动执行时（或 `start-patched-web.sh` 内置看门狗调用时）才会跑，绝不会 hook 进 `kimi web` 的启动流程。所以想用官方界面时，照常用 `kimi web` 或 TUI 里的 `/web` 启动即可。`kimi` 二进制每次启动都会把内嵌的官方资源按 sha256 校验重新解压到缓存目录，这意味着两件事：你拿到的 portal 是 100% 官方的，而且这次启动本身就会把共享缓存目录里的补丁覆盖掉。没有需要卸载的东西，也没有任何残留。之后想再用 Files 面板，重跑一次 `./apply.sh`（或用 `start-patched-web.sh` 启动）就行。
+
 **同时开多个 portal 时要注意**：同一个版本的 `kimi web` 共享同一个 dist-web 缓存目录——不管是 `kimi web`、`start-patched-web.sh` 还是 TUI 里的 `/web` 启动的。这带来两个直接推论：
 
 - 补丁打上之后，**所有**正在运行的同版本 portal 立刻都带 Files 面板（包括 `/web` 打开的那个），不需要每个单独补。
