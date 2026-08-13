@@ -138,6 +138,12 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 | `cdp-shot.mjs` | dev tool: drives headless Chrome over CDP to screenshot the panel end-to-end |
 | `docs/` | screenshots |
 
+## Changelog
+
+- **v0.34.1** — hidden-files toggle (eye button in the panel header): dotfiles are hidden by default, one click lists them via the server's `show_hidden` option. Verified on Kimi Code 0.34.0.
+- **v0.34.0** — verified on Kimi Code 0.34.0; Windows (Git Bash) scripts added (thanks [@chulongYang](https://github.com/chulongYang)).
+- **v0.32.0** — first tracked release: the Files panel, verified on 0.31.x / 0.32.0.
+
 ## Development
 
 ```bash

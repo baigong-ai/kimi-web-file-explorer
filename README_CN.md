@@ -136,6 +136,12 @@ pnpm --filter @moonshot-ai/kimi-web build
 | `cdp-shot.mjs` | 开发工具：通过 CDP 驱动 headless Chrome，端到端截图验证面板 |
 | `docs/` | 截图 |
 
+## 更新记录
+
+- **v0.34.1** — 面板头部新增隐藏文件开关（眼睛图标）：点开头文件默认隐藏，点一下即可通过服务端 `show_hidden` 选项列出。已在 Kimi Code 0.34.0 上实测。
+- **v0.34.0** — 在 Kimi Code 0.34.0 上验证通过；新增 Windows（Git Bash）脚本（感谢 [@chulongYang](https://github.com/chulongYang)）。
+- **v0.32.0** — 首个跟踪版本：Files 面板，在 0.31.x / 0.32.0 上验证通过。
+
 ## 开发
 
 ```bash
