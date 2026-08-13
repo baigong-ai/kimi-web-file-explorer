@@ -89,7 +89,7 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, and 0.34.0** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions. One trade-off to know: while the patch is in effect the portal serves the 0.31-era UI build, so web-UI features added in newer releases (e.g. the sidebar flat view and the one-click failure-resume card from 0.34) are not visible until you revert with a plain `kimi web` restart. If a future server release breaks it, this project is blocked until upstream publishes the web UI source again.
+**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, and 0.35.0** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions. One trade-off to know: while the patch is in effect the portal serves the 0.31-era UI build, so web-UI features added in newer releases (e.g. the sidebar flat view and the one-click failure-resume card from 0.34) are not visible until you revert with a plain `kimi web` restart. If a future server release breaks it, this project is blocked until upstream publishes the web UI source again.
 
 The scripts expect this layout (sibling directories under one parent folder):
 
@@ -140,6 +140,7 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 
 ## Changelog
 
+- **v0.35.0** — verified on Kimi Code 0.35.0 (panel, tree expand, preview, hidden-files toggle all confirmed end-to-end); no patch changes needed.
 - **v0.34.1** — hidden-files toggle (eye button in the panel header): dotfiles are hidden by default, one click lists them via the server's `show_hidden` option. Verified on Kimi Code 0.34.0.
 - **v0.34.0** — verified on Kimi Code 0.34.0; Windows (Git Bash) scripts added (thanks [@chulongYang](https://github.com/chulongYang)).
 - **v0.32.0** — first tracked release: the Files panel, verified on 0.31.x / 0.32.0.
@@ -154,7 +155,7 @@ pnpm --filter @moonshot-ai/kimi-web build           # rebuild after changes
 git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-Verified on macOS (arm64) with Kimi Code 0.31.x through 0.34.0. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
+Verified on macOS (arm64) with Kimi Code 0.31.x through 0.35.0. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
 
 ## License
 
