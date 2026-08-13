@@ -89,7 +89,9 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0、0.34.0 和 0.35.0** 上都能正常工作——它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。有一个代价要知道：补丁生效期间 portal 伺服的是 0.31 时期的 UI 构建，新版本里加的 web 界面功能（比如 0.34 的侧栏会话平铺视图、失败卡片一键恢复）在补丁期间看不到，不带补丁重启一次 `kimi web` 还原后即可使用。如果未来某个 server 版本破坏了兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
+**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0、0.34.0、0.35.0 和 0.36.0** 上都能正常工作——它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。
+
+**已知代价：界面漂移。** 补丁生效期间 portal 伺服的是 0.31 时期的 UI 构建。早期这只意味着*看不到*官方新加的界面功能；到 0.36 漂移已经*肉眼可见*，比如账号菜单里会显示官方现行界面已经移除的条目。这是整体替换界面方案的固有问题，而且会随着每次官方发版继续扩大。靠重做补丁解决不了：上游已不再公开 web UI 源码（0.32.0 起只发布编译混淆后的产物，现在直接跟踪在 `apps/kimi-code/dist-web`）。想看官方现行界面，不带补丁重启一次 `kimi web` 即可还原。如果未来某个 server 版本破坏了 fs API 兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
 
 脚本约定的目录结构如下（两个仓库在**同一个父文件夹**下）：
 
@@ -138,6 +140,7 @@ pnpm --filter @moonshot-ai/kimi-web build
 
 ## 更新记录
 
+- **v0.36.0** — 在 Kimi Code 0.36.0 上验证通过，补丁无需改动。README 补充了界面漂移的说明（伺服 0.31 时期界面带来的可见差异，如账号菜单残留条目）。
 - **v0.35.0** — 在 Kimi Code 0.35.0 上端到端验证通过（面板、目录展开、文件预览、隐藏文件开关均确认）；补丁无需改动。
 - **v0.34.1** — 面板头部新增隐藏文件开关（眼睛图标）：点开头文件默认隐藏，点一下即可通过服务端 `show_hidden` 选项列出。已在 Kimi Code 0.34.0 上实测。
 - **v0.34.0** — 在 Kimi Code 0.34.0 上验证通过；新增 Windows（Git Bash）脚本（感谢 [@chulongYang](https://github.com/chulongYang)）。
@@ -153,7 +156,7 @@ pnpm --filter @moonshot-ai/kimi-web build           # 改动后重新构建
 git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.35.0 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
+已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.36.0 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
 
 ## License
 
