@@ -89,7 +89,7 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, and 0.36.0** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions.
+**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, 0.36.0, and 0.37.2** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions.
 
 **Known trade-off — UI drift.** While the patch is in effect, the portal serves the 0.31-era UI build. Early on this only meant *missing* newer stock-UI features; by 0.36 the drift is also *visible* — for example the account menu shows entries the current official UI has since removed. This is inherent to replacing the whole UI, and it will keep growing with each release. It can't be fixed by rebasing the patch: upstream no longer publishes the web UI source (since 0.32.0 only the compiled, minified dist ships, now tracked at `apps/kimi-code/dist-web`). A plain `kimi web` restart always brings back the current stock UI. If a future server release breaks the fs APIs, this project is blocked until upstream publishes the web UI source again.
 
@@ -144,6 +144,7 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 
 ## Changelog
 
+- **v0.37.2** — verified on Kimi Code 0.37.2 (panel, tree expand, preview, hidden-files toggle via `show_hidden` all confirmed end-to-end); no patch changes needed. Upstream still has no native file tree / files panel (0.37.0's sidebar Open/Done/Workspaces tabs are session management, not a file explorer).
 - **v0.36.0** — verified on Kimi Code 0.36.0; no patch changes needed. README now documents the visible UI-drift caveat (stale account-menu entries) that comes with serving the 0.31-era UI build.
 - **v0.35.0** — verified on Kimi Code 0.35.0 (panel, tree expand, preview, hidden-files toggle all confirmed end-to-end); no patch changes needed.
 - **v0.34.1** — hidden-files toggle (eye button in the panel header): dotfiles are hidden by default, one click lists them via the server's `show_hidden` option. Verified on Kimi Code 0.34.0.
@@ -160,7 +161,7 @@ pnpm --filter @moonshot-ai/kimi-web build           # rebuild after changes
 git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-Verified on macOS (arm64) with Kimi Code 0.31.x through 0.36.0. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
+Verified on macOS (arm64) with Kimi Code 0.31.x through 0.37.2. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
 
 ## License
 
