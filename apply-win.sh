@@ -26,7 +26,7 @@ if [ ! -f "$SRC/index.html" ]; then
   exit 1
 fi
 
-# 取最近一次解压（mtime 最新）的 dist-web —— 对应当前运行的 server。
+# 取最近一次解压（mtime 最新）的 dist-web，对应当前运行的 server。
 TARGET=$(find "$CACHE_ROOT" -type d -name dist-web -exec stat -c '%Y %n' {} \; 2>/dev/null \
   | sort -rn | head -1 | cut -d' ' -f2-)
 
@@ -49,6 +49,9 @@ fi
 # 不用删除旧文件：保留官方旧 bundle，浏览器若缓存了旧 index.html 仍能打开。
 cp -r "$SRC/assets/." "$TARGET/assets/"
 cp "$SRC/index.html" "$SRC/boot.js" "$SRC/favicon.ico" "$TARGET/"
+# cp 保留源文件 mtime，入口文件 Last-Modified 可能比浏览器缓存的官方版更旧，
+# 静态服务按 If-Modified-Since 回 304 导致补丁看似没生效。touch 强制更新。
+touch "$TARGET/index.html" "$TARGET/boot.js"
 if [ "$MODE" != "--if-reverted" ]; then
   echo "patched: $TARGET"
 fi

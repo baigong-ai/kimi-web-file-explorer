@@ -36,11 +36,14 @@ KPID=$!
         sleep 1
         "$DIR/apply-win.sh"
         if [ "$OPEN_AFTER" = "1" ]; then
-          # 加时间戳查询串，逼浏览器重新拉取 index.html（kimi server 不发缓存头）
+          # 加时间戳查询串，逼浏览器重新拉取 index.html（kimi server 不发缓存头）。
+          # URL 已带查询串时（如 --remote-control 跳转链接 ?rc=1&from=...）
+          # 必须用 & 拼接，否则会产生两个 ? 污染已有参数。
           TS=$(date +%s)
+          SEP='?'; [[ "$URL" == *\?* ]] && SEP='&'
           case "$URL" in
-            *\#*) OPEN_URL="${URL%%#*}?t=$TS#${URL#*#}" ;;
-            *)    OPEN_URL="$URL?t=$TS" ;;
+            *\#*) OPEN_URL="${URL%%#*}${SEP}t=$TS#${URL#*#}" ;;
+            *)    OPEN_URL="$URL${SEP}t=$TS" ;;
           esac
           cmd //c start "" "$OPEN_URL" >/dev/null 2>&1
         fi

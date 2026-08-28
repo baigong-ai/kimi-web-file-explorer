@@ -1,5 +1,5 @@
 diff --git a/apps/kimi-web/src/App.vue b/apps/kimi-web/src/App.vue
-index 5708bcc..ad6f475 100644
+index 5708bcc9..ad6f475b 100644
 --- a/apps/kimi-web/src/App.vue
 +++ b/apps/kimi-web/src/App.vue
 @@ -35,6 +35,8 @@ import { usePageTitle } from './composables/usePageTitle';
@@ -46,8 +46,53 @@ index 5708bcc..ad6f475 100644
      </aside>
  
      <!-- Internal-build tag — pinned to the app's bottom-right corner, above
+diff --git a/apps/kimi-web/src/api/config.ts b/apps/kimi-web/src/api/config.ts
+index 620e9eca..7ea1af2a 100644
+--- a/apps/kimi-web/src/api/config.ts
++++ b/apps/kimi-web/src/api/config.ts
+@@ -17,7 +17,9 @@ export interface KimiApiConfig {
+ 
+ export function readKimiApiConfig(): KimiApiConfig {
+   return {
+-    serverHttpUrl: normalizeServerOrigin(import.meta.env.VITE_KIMI_SERVER_HTTP_URL),
++    serverHttpUrl: normalizeServerOrigin(
++      serverOriginOverride() ?? import.meta.env.VITE_KIMI_SERVER_HTTP_URL,
++    ),
+     clientId: getClientId(),
+     clientName: WEB_CLIENT_NAME,
+     clientVersion: webClientVersion(),
+@@ -25,6 +27,29 @@ export function readKimiApiConfig(): KimiApiConfig {
+   };
+ }
+ 
++// Remote Control (0.39) support, backported to this frontend build: the
++// code-rc.kimi.com relay serves this SPA under /devices/<id>/ and injects the
++// device-scoped server origin into sessionStorage (or it arrives as a
++// ?kimi_origin= query param). When present, REST/WS calls must target that
++// origin so the relay tunnels them to the local server; without this the
++// calls hit the relay root and fail (e.g. "Failed to parse JSON response
++// from GET /auth"). Mirrors the official 0.39 web bundle behavior.
++const SERVER_ORIGIN_STORAGE_KEY = 'kimi-desktop-server-origin';
++
++function serverOriginOverride(): string | undefined {
++  if (typeof window === 'undefined') return undefined;
++  const fromQuery = new URLSearchParams(window.location.search).get('kimi_origin');
++  try {
++    if (fromQuery) {
++      window.sessionStorage.setItem(SERVER_ORIGIN_STORAGE_KEY, fromQuery);
++      return fromQuery;
++    }
++    return window.sessionStorage.getItem(SERVER_ORIGIN_STORAGE_KEY) ?? undefined;
++  } catch {
++    return fromQuery ?? undefined;
++  }
++}
++
+ // Default to SAME-ORIGIN so we never depend on CORS:
+ //  - dev: the SPA is served by Vite; the Vite dev proxy forwards /v1, /healthz
+ //    and /v1/ws to the server (see vite.config.ts), so the browser only ever
 diff --git a/apps/kimi-web/src/api/daemon/client.ts b/apps/kimi-web/src/api/daemon/client.ts
-index 3dd6cd7..00c65c0 100644
+index 3dd6cd70..00c65c07 100644
 --- a/apps/kimi-web/src/api/daemon/client.ts
 +++ b/apps/kimi-web/src/api/daemon/client.ts
 @@ -905,7 +905,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
@@ -68,7 +113,7 @@ index 3dd6cd7..00c65c0 100644
        `/sessions/${encodeURIComponent(sessionId)}/fs:list`,
        body,
 diff --git a/apps/kimi-web/src/api/types.ts b/apps/kimi-web/src/api/types.ts
-index 5413f7f..c593aab 100644
+index 5413f7f5..c593aabe 100644
 --- a/apps/kimi-web/src/api/types.ts
 +++ b/apps/kimi-web/src/api/types.ts
 @@ -745,7 +745,7 @@ export interface KimiWebApi {
@@ -82,7 +127,7 @@ index 5413f7f..c593aab 100644
    searchFiles(workspace: string, input: { query: string; limit?: number }): Promise<{ items: Array<{ path: string; name: string; kind: FsKind; score: number; matchPositions: number[] }>; truncated: boolean }>;
 diff --git a/apps/kimi-web/src/components/FileTreePanel.vue b/apps/kimi-web/src/components/FileTreePanel.vue
 new file mode 100644
-index 0000000..f1136a8
+index 00000000..f1136a8e
 --- /dev/null
 +++ b/apps/kimi-web/src/components/FileTreePanel.vue
 @@ -0,0 +1,360 @@
@@ -447,7 +492,7 @@ index 0000000..f1136a8
 +}
 +</style>
 diff --git a/apps/kimi-web/src/components/chat/ChatHeader.vue b/apps/kimi-web/src/components/chat/ChatHeader.vue
-index 0dff7ba..74086bd 100644
+index 0dff7bae..74086bd2 100644
 --- a/apps/kimi-web/src/components/chat/ChatHeader.vue
 +++ b/apps/kimi-web/src/components/chat/ChatHeader.vue
 @@ -38,6 +38,7 @@ const emit = defineEmits<{
@@ -475,7 +520,7 @@ index 0dff7ba..74086bd 100644
           git repo, even a detached HEAD (empty branch → "detached" label), so the
           diff counter below is never hidden just because there's no branch name. -->
 diff --git a/apps/kimi-web/src/components/chat/ConversationPane.vue b/apps/kimi-web/src/components/chat/ConversationPane.vue
-index 0464bea..bf97a8c 100644
+index 0464beac..bf97a8cc 100644
 --- a/apps/kimi-web/src/components/chat/ConversationPane.vue
 +++ b/apps/kimi-web/src/components/chat/ConversationPane.vue
 @@ -127,6 +127,8 @@ const emit = defineEmits<{
@@ -496,7 +541,7 @@ index 0464bea..bf97a8c 100644
        @copy-final-summary="chatPaneRef?.copyFinalSummary()"
        @open-pr="pr && emit('openPr', pr.url)"
 diff --git a/apps/kimi-web/src/composables/client/useWorkspaceState.ts b/apps/kimi-web/src/composables/client/useWorkspaceState.ts
-index 42e01e8..7116124 100644
+index 42e01e8e..71161242 100644
 --- a/apps/kimi-web/src/composables/client/useWorkspaceState.ts
 +++ b/apps/kimi-web/src/composables/client/useWorkspaceState.ts
 @@ -2601,12 +2601,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
@@ -515,7 +560,7 @@ index 42e01e8..7116124 100644
      } catch {
        return [];
 diff --git a/apps/kimi-web/src/composables/useDetailPanel.ts b/apps/kimi-web/src/composables/useDetailPanel.ts
-index 5a8dc93..be9033c 100644
+index 5a8dc93b..be9033ca 100644
 --- a/apps/kimi-web/src/composables/useDetailPanel.ts
 +++ b/apps/kimi-web/src/composables/useDetailPanel.ts
 @@ -261,6 +261,22 @@ export function useDetailPanel({
@@ -567,7 +612,7 @@ index 5a8dc93..be9033c 100644
      panelDragging,
      closeOpenSidePanel,
 diff --git a/apps/kimi-web/src/composables/useFilePreview.ts b/apps/kimi-web/src/composables/useFilePreview.ts
-index f61d98d..6c24829 100644
+index f61d98d0..6c248290 100644
 --- a/apps/kimi-web/src/composables/useFilePreview.ts
 +++ b/apps/kimi-web/src/composables/useFilePreview.ts
 @@ -11,7 +11,7 @@ import type { useKimiWebClient } from './useKimiWebClient';
@@ -581,7 +626,7 @@ index f61d98d..6c24829 100644
   *  `ms://…` has no local bytes and only yields a broken player, so it's treated
 diff --git a/apps/kimi-web/src/composables/useFileTree.ts b/apps/kimi-web/src/composables/useFileTree.ts
 new file mode 100644
-index 0000000..ba6da4f
+index 00000000..ba6da4f9
 --- /dev/null
 +++ b/apps/kimi-web/src/composables/useFileTree.ts
 @@ -0,0 +1,255 @@
@@ -841,7 +886,7 @@ index 0000000..ba6da4f
 +
 +export type FileTree = ReturnType<typeof useFileTree>;
 diff --git a/apps/kimi-web/src/i18n/locales/en/fileTree.ts b/apps/kimi-web/src/i18n/locales/en/fileTree.ts
-index 927e1a9..e61db85 100644
+index 927e1a9f..e61db85b 100644
 --- a/apps/kimi-web/src/i18n/locales/en/fileTree.ts
 +++ b/apps/kimi-web/src/i18n/locales/en/fileTree.ts
 @@ -1 +1,16 @@
@@ -863,7 +908,7 @@ index 927e1a9..e61db85 100644
 +  loadFileFailed: 'Unable to read this file',
 +} as const;
 diff --git a/apps/kimi-web/src/i18n/locales/zh/fileTree.ts b/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
-index 927e1a9..aa7e27d 100644
+index 927e1a9f..aa7e27d5 100644
 --- a/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
 +++ b/apps/kimi-web/src/i18n/locales/zh/fileTree.ts
 @@ -1 +1,16 @@
@@ -885,7 +930,7 @@ index 927e1a9..aa7e27d 100644
 +  loadFileFailed: '无法读取这个文件',
 +} as const;
 diff --git a/apps/kimi-web/src/lib/icons.ts b/apps/kimi-web/src/lib/icons.ts
-index f7d64a8..6126509 100644
+index f7d64a8a..61265097 100644
 --- a/apps/kimi-web/src/lib/icons.ts
 +++ b/apps/kimi-web/src/lib/icons.ts
 @@ -62,6 +62,8 @@ import RiDraggable from '~icons/ri/draggable';

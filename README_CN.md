@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-给 [Kimi Code](https://github.com/MoonshotAI/kimi-code) 的 web portal（`kimi web` / `/web`）加了一个 **Files 文件面板**：在聊天页右侧直接浏览当前工作目录的文件树，点击文件在同一面板内预览（markdown、代码、图片、PDF 等）——再也不用离开浏览器去看文件了。
+给 [Kimi Code](https://github.com/MoonshotAI/kimi-code) 的 web portal（`kimi web` / `/web`）加了一个 **Files 文件面板**：在聊天页右侧直接浏览当前工作目录的文件树，点击文件在同一面板内预览（markdown、代码、图片、PDF 等），再也不用离开浏览器去看文件了。
 
 ![Files 面板](docs/files-panel.png)
 
@@ -12,7 +12,7 @@
 
 ## 为什么做这个
 
-Kimi Code 的 web 界面很适合长会话，但它看不到工作目录——想确认一个文件就得切到终端、编辑器或访达。研究之后发现缺的其实很少：服务端本来就提供完整的文件 API（`fs:list` / `fs:read`，带 git 状态），web 前端也有现成的文件预览组件和右侧面板体系，上游甚至预留了空的 `fileTree` i18n 占位。kimi-web-files 把这些现成的零件组装成了 portal 缺失的文件树。
+Kimi Code 的 web 界面很适合长会话，但它看不到工作目录，想确认一个文件就得切到终端、编辑器或访达。研究之后发现缺的其实很少：服务端本来就提供完整的文件 API（`fs:list` / `fs:read`，带 git 状态），web 前端也有现成的文件预览组件和右侧面板体系，上游甚至预留了空的 `fileTree` i18n 占位。kimi-web-files 把这些现成的零件组装成了 portal 缺失的文件树。
 
 ## 实现原理
 
@@ -26,7 +26,7 @@ Kimi Code 的 web UI 是开源的，源码在 [MoonshotAI/kimi-code](https://git
 
 运行中的 server 做的事情很简单：把这个目录里的静态文件发给浏览器，同时提供前端调用的 REST/WS API。
 
-所以两者的关系是：**二进制里的 web 代码 = 官方源码编译后的成品**。直接在解压出来的 bundle 上加功能是不现实的（压缩混淆过的代码没法开发，而且 sha256 校验也会把改动还原）——唯一合理的工作面是源码。
+所以两者的关系是：**二进制里的 web 代码 = 官方源码编译后的成品**。直接在解压出来的 bundle 上加功能是不现实的（压缩混淆过的代码没法开发，而且 sha256 校验也会把改动还原），唯一合理的工作面是源码。
 
 ### 本项目的做法
 
@@ -46,16 +46,16 @@ MoonshotAI/kimi-code（apps/kimi-web 源码）
                 ► server 开始伺服补丁版界面，直到进程结束
 ```
 
-1. 克隆官方源码，`git apply` 打上 `kimi-web-files.patch`——整个功能就是一个干净的 diff（2 个新文件 + 11 处小接线）。
-2. 用和官方相同的工具链构建。得到的 `dist/` 是**完整**的 web UI——官方版加上 Files 面板。
-3. `apply.sh` 把这份构建产物整体替换到运行中 server 的资源缓存目录。时机是关键：二进制在**每次启动时**都会重新解压（即还原）官方资源，但运行中的 server 是按请求从磁盘读文件的。所以补丁必须在 server 启动**之后**应用。注意同一个版本的所有 `kimi web` 进程共享同一个缓存目录——补丁对所有同版本 portal 同时生效，也会被任何一次新的 `kimi web` 启动一并还原（`start-patched-web.sh` 的看门狗会发现并自动重打）。
+1. 克隆官方源码，`git apply` 打上 `kimi-web-files.patch`，整个功能就是一个干净的 diff（2 个新文件 + 11 处小接线）。
+2. 用和官方相同的工具链构建。得到的 `dist/` 是**完整**的 web UI，官方版加上 Files 面板。
+3. `apply.sh` 把这份构建产物整体替换到运行中 server 的资源缓存目录。时机是关键：二进制在**每次启动时**都会重新解压（即还原）官方资源，但运行中的 server 是按请求从磁盘读文件的。所以补丁必须在 server 启动**之后**应用。注意同一个版本的所有 `kimi web` 进程共享同一个缓存目录，补丁对所有同版本 portal 同时生效，也会被任何一次新的 `kimi web` 启动一并还原（`start-patched-web.sh` 的看门狗会发现并自动重打）。
 
-server 端完全无感——它只是把缓存目录里现有的静态文件发出去，并照常提供同一套稳定的、会话作用域的 fs API。
+server 端完全无感，它只是把缓存目录里现有的静态文件发出去，并照常提供同一套稳定的、会话作用域的 fs API。
 
 ### 安全性从哪来
 
-- **不修改任何持久的东西**。`kimi` 二进制、`~/.kimi-code`、二进制内嵌的官方资源都不会被碰。被改动的只有一个缓存目录的内容——而这个目录在二进制眼里本来就是一次性的。
-- **回滚是自动且必然的**——这是优点。每次启动时 sha256 校验 + 重新解压的机制意味着：只要不带补丁重启一次 `kimi web`，就必定回到 100% 官方界面。这个补丁不可能"弄坏"你的安装，重启即撤销。
+- **不修改任何持久的东西**。`kimi` 二进制、`~/.kimi-code`、二进制内嵌的官方资源都不会被碰。被改动的只有一个缓存目录的内容，而这个目录在二进制眼里本来就是一次性的。
+- **回滚是自动且必然的**，这是优点。每次启动时 sha256 校验 + 重新解压的机制意味着：只要不带补丁重启一次 `kimi web`，就必定回到 100% 官方界面。这个补丁不可能"弄坏"你的安装，重启即撤销。
 - **影响范围只是一个浏览器页面**。补丁改变的只是本地 server 发给浏览器的静态文件。不增加任何服务端路由、不提升任何权限、不产生任何超出现有同源 API 的网络请求。
 
 ## 功能
@@ -73,7 +73,7 @@ server 端完全无感——它只是把缓存目录里现有的静态文件发�
 
 ```bash
 # 1. 克隆官方源码并检出 web UI 代码。
-#    注意：上游从 0.32.0 起把 apps/kimi-web 从 main 分支移除了，
+#    注意：上游从 0.33.0 起把 apps/kimi-web 从 main 分支移除了，
 #    直接 clone main 已经拿不到 web 源码。需要固定到最后一个
 #    还包含它的 commit：
 git clone --depth 1 --filter=blob:none --no-checkout https://github.com/MoonshotAI/kimi-code.git kimi-code-src
@@ -89,9 +89,9 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0、0.34.0、0.35.0、0.36.0 和 0.37.2** 上都能正常工作——它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。
+**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0、0.34.0、0.35.0、0.36.0、0.37.2 和 0.39.0** 上都能正常工作；它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。在 0.39.0 上，补丁版 UI 也能通过 **Remote Control**（`kimi rc` / `kimi web --remote-control`）正常使用：补丁回移了中继注入的 server-origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），RC 隧道会把这段逻辑注入 HTML，而 0.33 之前的前端不认识它，缺了它隧道里的 UI 会把 API 请求打到中继根路径上，报"Failed to parse JSON response from GET /auth"。（一个无伤大雅的小问题：0.39.0 二进制内嵌的 web 资源在版本面板里仍自报 0.38.0，上游忘了 bump。）
 
-**已知代价：界面漂移。** 补丁生效期间 portal 伺服的是 0.31 时期的 UI 构建。早期这只意味着*看不到*官方新加的界面功能；到 0.36 漂移已经*肉眼可见*，比如账号菜单里会显示官方现行界面已经移除的条目。这是整体替换界面方案的固有问题，而且会随着每次官方发版继续扩大。靠重做补丁解决不了：上游已不再公开 web UI 源码（0.32.0 起只发布编译混淆后的产物，现在直接跟踪在 `apps/kimi-code/dist-web`）。想看官方现行界面，不带补丁重启一次 `kimi web` 即可还原。如果未来某个 server 版本破坏了 fs API 兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
+**已知代价：界面漂移。** 补丁生效期间 portal 伺服的是 0.31 时期的 UI 构建。早期这只意味着*看不到*官方新加的界面功能；到 0.36 漂移已经*肉眼可见*，比如账号菜单里会显示官方现行界面已经移除的条目。这是整体替换界面方案的固有问题，而且会随着每次官方发版继续扩大。靠重做补丁解决不了：上游已不再公开 web UI 源码（0.33.0 起只发布编译混淆后的产物，现在直接跟踪在 `apps/kimi-code/dist-web`）。想看官方现行界面，不带补丁重启一次 `kimi web` 即可还原。如果未来某个 server 版本破坏了 fs API 兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
 
 脚本约定的目录结构如下（两个仓库在**同一个父文件夹**下）：
 
@@ -103,7 +103,7 @@ pnpm --filter @moonshot-ai/kimi-web build
 
 之所以要求"放一起"，是因为 `apply.sh` 默认按相对路径 `<本仓库>/../kimi-code-src/apps/kimi-web/dist` 找构建产物。目录结构不同也能用，显式指定即可：`KIMI_WEB_DIST=/路径/kimi-web/dist ./apply.sh`。
 
-**Windows：** 请改用 Git Bash 移植版 `apply-win.sh` / `start-patched-web-win.sh`（缓存目录取 `%LOCALAPPDATA%\kimi-code\web`，用 `cp` 代替 `rsync`，浏览器用 `cmd /c start` 打开）。一个坑：`core.autocrlf=true` 时 `.patch` 文件会被签出成 CRLF，导致 `git apply` 全部不匹配——先执行一次 `sed -i 's/\r$//' kimi-web-files.patch`（可选补丁同理）再应用。
+**Windows：** 请改用 Git Bash 移植版 `apply-win.sh` / `start-patched-web-win.sh`（缓存目录取 `%LOCALAPPDATA%\kimi-code\web`，用 `cp` 代替 `rsync`，浏览器用 `cmd /c start` 打开）。一个坑：`core.autocrlf=true` 时 `.patch` 文件会被签出成 CRLF，导致 `git apply` 全部不匹配，先执行一次 `sed -i 's/\r$//' kimi-web-files.patch`（可选补丁同理）再应用。
 
 ## 使用
 
@@ -115,11 +115,19 @@ pnpm --filter @moonshot-ai/kimi-web build
 ./apply.sh
 ```
 
-然后点聊天页 header 右侧新增的文件夹图标即可。`start-patched-web.sh` 会在补丁完整落地**之后**才打开浏览器，并在 URL 上加时间戳参数，强制浏览器重新拉取入口 HTML——kimi server 不发任何缓存头，Safari 会启发式缓存旧入口，可能引用到已被替换掉的 bundle，表现为白屏。如果个别情况下还是白屏，硬刷新（Cmd+Shift+R）一次即可。
+然后点聊天页 header 右侧新增的文件夹图标即可。`start-patched-web.sh` 会在补丁完整落地**之后**才打开浏览器，并在 URL 上加时间戳参数，强制浏览器重新拉取入口 HTML，因为 kimi server 不发任何缓存头，Safari 会启发式缓存旧入口，可能引用到已被替换掉的 bundle，表现为白屏。如果个别情况下还是白屏，硬刷新（Cmd+Shift+R）一次即可。
+
+**Remote Control（kimi ≥ 0.39，实验特性）**：补丁版 UI 同样可以在 RC 隧道里用，远端浏览器拿到的就是这份补丁构建，Files 面板也在。用包装脚本启动，保证补丁在 server（及其隧道）就绪后再落地：
+
+```bash
+KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
+```
+
+如果已经有 `kimi rc` 在跑，直接 `./apply.sh` 补一次即可（隧道伺服的就是那个共享缓存目录）。然后打开 `code-rc.kimi.com` 链接（或扫二维码），登录 Kimi 账号即可。
 
 **想用原版 portal？直接用就行，不需要任何还原操作。** 本项目没有任何东西会自动运行：`apply.sh` 只在你手动执行时（或 `start-patched-web.sh` 内置看门狗调用时）才会跑，绝不会 hook 进 `kimi web` 的启动流程。所以想用官方界面时，照常用 `kimi web` 或 TUI 里的 `/web` 启动即可。`kimi` 二进制每次启动都会把内嵌的官方资源按 sha256 校验重新解压到缓存目录，这意味着两件事：你拿到的 portal 是 100% 官方的，而且这次启动本身就会把共享缓存目录里的补丁覆盖掉。没有需要卸载的东西，也没有任何残留。之后想再用 Files 面板，重跑一次 `./apply.sh`（或用 `start-patched-web.sh` 启动）就行。
 
-**同时开多个 portal 时要注意**：同一个版本的 `kimi web` 共享同一个 dist-web 缓存目录——不管是 `kimi web`、`start-patched-web.sh` 还是 TUI 里的 `/web` 启动的。这带来两个直接推论：
+**同时开多个 portal 时要注意**：同一个版本的 `kimi web` 共享同一个 dist-web 缓存目录，不管是 `kimi web`、`start-patched-web.sh` 还是 TUI 里的 `/web` 启动的。这带来两个直接推论：
 
 - 补丁打上之后，**所有**正在运行的同版本 portal 立刻都带 Files 面板（包括 `/web` 打开的那个），不需要每个单独补。
 - 任何一次新的 `kimi web` 启动都会重新解压官方资源、把补丁覆盖掉，**所有**同版本 portal 会一起回到官方界面。为此 `start-patched-web.sh` 内置了看门狗：它运行期间每 3 秒检查一次，发现补丁被覆盖就自动重打。如果你没用它，被覆盖后手动重跑一次 `apply.sh` 即可。
@@ -132,16 +140,17 @@ pnpm --filter @moonshot-ai/kimi-web build
 
 | 文件 | 说明 |
 |---|---|
-| `kimi-web-files.patch` | 功能本体：针对 MoonshotAI/kimi-code 中 `apps/kimi-web` 的 git 补丁（2 个新文件、11 个文件接线，约 100 行接线 + 新的树/面板组件） |
+| `kimi-web-files.patch` | 功能本体：针对 MoonshotAI/kimi-code 中 `apps/kimi-web` 的 git 补丁（2 个新文件、12 个文件接线，约 100 行接线 + 新的树/面板组件） |
 | `apply.sh` | 把构建产物同步到运行中 server 的资源缓存 |
-| `apply-win.sh` | `apply.sh` 的 Windows（Git Bash）移植版——缓存目录取 `%LOCALAPPDATA%`，用 `cp` 代替 `rsync` |
-| `start-patched-web.sh` | `kimi web` 包装器：等 server 监听端口后自动执行 `apply.sh`，并带看门狗——补丁被其他 `kimi web` 启动覆盖时自动重打 |
-| `start-patched-web-win.sh` | `start-patched-web.sh` 的 Windows（Git Bash）移植版——`curl` 探测就绪、`cmd /c start` 打开浏览器 |
+| `apply-win.sh` | `apply.sh` 的 Windows（Git Bash）移植版，缓存目录取 `%LOCALAPPDATA%`，用 `cp` 代替 `rsync` |
+| `start-patched-web.sh` | `kimi web` 包装器：等 server 监听端口后自动执行 `apply.sh`，并带看门狗，补丁被其他 `kimi web` 启动覆盖时自动重打 |
+| `start-patched-web-win.sh` | `start-patched-web.sh` 的 Windows（Git Bash）移植版，`curl` 探测就绪、`cmd /c start` 打开浏览器 |
 | `cdp-shot.mjs` | 开发工具：通过 CDP 驱动 headless Chrome，端到端截图验证面板 |
 | `docs/` | 截图 |
 
 ## 更新记录
 
+- **v0.39.0** — 在 Kimi Code 0.39.0 上验证通过，包括 **Remote Control** 端到端实测（`kimi rc` 启动、远程浏览器接入、隧道内 Files 面板可用）。补丁在前端的 API 配置里回移了中继的 server-origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），没有它，RC 隧道里的 UI 会把 API 请求打到中继根路径而不是设备隧道，报 `Failed to parse JSON response from GET /auth`。脚本修复：`apply.sh` / `apply-win.sh` 同步后 `touch` 入口 HTML（rsync/cp 会保留源文件 mtime，导致补丁版 `index.html` 比浏览器缓存的官方版"更旧"而收到 304）；`start-patched-web*.sh` 在 URL 已带查询串时改用 `&` 拼接防缓存时间戳（RC 跳转链接就带查询串），修掉了把链接搞坏的双 `?`。
 - **v0.37.2** — 在 Kimi Code 0.37.2 上端到端验证通过（面板、目录展开、文件预览、`show_hidden` 隐藏文件开关均确认）；补丁无需改动。官方仍没有内置文件树/文件面板（0.37.0 的侧边栏 Open/Done/Workspaces 标签页是会话管理，不是文件浏览器）。
 - **v0.36.0** — 在 Kimi Code 0.36.0 上验证通过，补丁无需改动。README 补充了界面漂移的说明（伺服 0.31 时期界面带来的可见差异，如账号菜单残留条目）。
 - **v0.35.0** — 在 Kimi Code 0.35.0 上端到端验证通过（面板、目录展开、文件预览、隐藏文件开关均确认）；补丁无需改动。
@@ -159,7 +168,7 @@ pnpm --filter @moonshot-ai/kimi-web build           # 改动后重新构建
 git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.37.2 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
+已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.39.0 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
 
 ## License
 

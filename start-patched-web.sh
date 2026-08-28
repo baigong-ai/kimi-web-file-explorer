@@ -30,12 +30,15 @@ KPID=$!
       sleep 1
       "$DIR/apply.sh"
       if [ "$OPEN_AFTER" = "1" ]; then
-        # 加时间戳查询串，逼浏览器重新拉取 index.html —— kimi server 不发
+        # 加时间戳查询串，逼浏览器重新拉取 index.html，因为 kimi server 不发
         # 缓存头，Safari 会启发式缓存旧 index.html（可能引到已替换的 bundle）。
+        # 注意 URL 可能已带查询串（如 --remote-control 的跳转链接 ?rc=1&from=...），
+        # 此时必须用 & 拼接，否则会产生两个 ? 污染已有参数。
         TS=$(date +%s)
+        SEP='?'; [[ "$URL" == *\?* ]] && SEP='&'
         case "$URL" in
-          *\#*) open "${URL%%#*}?t=$TS#${URL#*#}" ;;
-          *)      open "$URL?t=$TS" ;;
+          *\#*) open "${URL%%#*}${SEP}t=$TS#${URL#*#}" ;;
+          *)      open "$URL${SEP}t=$TS" ;;
         esac
       fi
       # 看门狗：同版本的多个 kimi web 共享同一个 dist-web 缓存目录，任何一个

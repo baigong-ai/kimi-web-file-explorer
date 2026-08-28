@@ -73,7 +73,7 @@ Requirements: Node.js ≥ 24.15, pnpm 10 (the same toolchain as kimi-code itself
 
 ```bash
 # 1. Clone the official source and check out the web UI code.
-#    NOTE: upstream removed apps/kimi-web from main in 0.32.0, so a plain
+#    NOTE: upstream removed apps/kimi-web from main in 0.33.0, so a plain
 #    clone of main no longer contains the web UI source. Pin the last
 #    commit that still has it:
 git clone --depth 1 --filter=blob:none --no-checkout https://github.com/MoonshotAI/kimi-code.git kimi-code-src
@@ -89,9 +89,9 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, 0.36.0, and 0.37.2** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions.
+**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, 0.36.0, 0.37.2, and 0.39.0** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions. On 0.39.0 the patched UI also works over **Remote Control** (`kimi rc` / `kimi web --remote-control`): the patch backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`), which the RC tunnel injects into the served HTML and which the pre-0.33 frontend doesn't know about — without it the tunneled UI calls the relay root instead of the device tunnel and fails with "Failed to parse JSON response from GET /auth". (Cosmetic quirk: the 0.39.0 binary embeds web assets that still self-report as 0.38.0 in the version panel — upstream didn't bump it.)
 
-**Known trade-off — UI drift.** While the patch is in effect, the portal serves the 0.31-era UI build. Early on this only meant *missing* newer stock-UI features; by 0.36 the drift is also *visible* — for example the account menu shows entries the current official UI has since removed. This is inherent to replacing the whole UI, and it will keep growing with each release. It can't be fixed by rebasing the patch: upstream no longer publishes the web UI source (since 0.32.0 only the compiled, minified dist ships, now tracked at `apps/kimi-code/dist-web`). A plain `kimi web` restart always brings back the current stock UI. If a future server release breaks the fs APIs, this project is blocked until upstream publishes the web UI source again.
+**Known trade-off — UI drift.** While the patch is in effect, the portal serves the 0.31-era UI build. Early on this only meant *missing* newer stock-UI features; by 0.36 the drift is also *visible* — for example the account menu shows entries the current official UI has since removed. This is inherent to replacing the whole UI, and it will keep growing with each release. It can't be fixed by rebasing the patch: upstream no longer publishes the web UI source (since 0.33.0 only the compiled, minified dist ships, now tracked at `apps/kimi-code/dist-web`). A plain `kimi web` restart always brings back the current stock UI. If a future server release breaks the fs APIs, this project is blocked until upstream publishes the web UI source again.
 
 The scripts expect this layout (sibling directories under one parent folder):
 
@@ -119,6 +119,14 @@ some-folder/
 
 Then click the new folder icon in the chat header. `start-patched-web.sh` opens the browser only *after* the patch has fully landed, and adds a timestamp query to the URL so the browser re-fetches the entry HTML — the kimi server sends no cache headers, so Safari heuristically caches the old entry page, which can point at a bundle that has since been replaced and render a blank page. If you ever do hit a blank page, one hard refresh (Cmd+Shift+R) fixes it.
 
+**Remote Control (kimi ≥ 0.39, experimental):** the patched UI works over the RC tunnel too — the remote browser is served this same patched build, Files panel included. Start through the wrapper so the patch lands after the server (and its tunnel) is up:
+
+```bash
+KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
+```
+
+If a plain `kimi rc` is already running, `./apply.sh` once is enough (the tunnel serves whatever is in the shared cache directory). Then open the `code-rc.kimi.com` link — or scan the QR code — and log in with your Kimi account.
+
 **Prefer the stock portal? Just use it — nothing to undo.** Nothing in this project runs by itself: `apply.sh` only executes when you invoke it manually (or via the watchdog inside `start-patched-web.sh`). It never hooks into `kimi web` startup. So whenever you want the official portal, start it the usual way — `kimi web`, or `/web` in the TUI. At every launch the `kimi` binary re-extracts its embedded, sha256-verified stock assets into the cache directory, which means two things: the portal you get is 100% official, and that very launch wipes the patch for every same-version portal sharing the cache. There is nothing to uninstall and no residue. Want the Files panel back later? Run `./apply.sh` once (or start via `start-patched-web.sh`).
 
 **Running several portals at once:** all `kimi web` processes of the same version share one dist-web cache directory — whether started via `kimi web`, `start-patched-web.sh`, or `/web` in the TUI. Two direct consequences:
@@ -134,7 +142,7 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 
 | file | what it is |
 |---|---|
-| `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 11 touched, ~100 insertions of wiring + the new tree/panel) |
+| `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 12 touched, ~100 insertions of wiring + the new tree/panel) |
 | `apply.sh` | sync the built web app into the running server's asset cache |
 | `apply-win.sh` | Windows (Git Bash) port of `apply.sh` — cache under `%LOCALAPPDATA%`, `cp` instead of `rsync` |
 | `start-patched-web.sh` | `kimi web` wrapper: waits for the server to listen, runs `apply.sh`, then watchdogs it — re-applies automatically if another `kimi web` launch wipes the patch |
@@ -144,6 +152,7 @@ Then click the new folder icon in the chat header. `start-patched-web.sh` opens 
 
 ## Changelog
 
+- **v0.39.0** — verified on Kimi Code 0.39.0, including **Remote Control** end-to-end (`kimi rc`, remote browser connects, Files panel usable over the tunnel). The patch now backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`) into the frontend's API config — without it, the RC-served UI called the relay root instead of the device tunnel and failed with `Failed to parse JSON response from GET /auth`. Script fixes: `apply.sh` / `apply-win.sh` now `touch` the entry HTML after syncing (rsync/cp preserve the source mtime, which made the patched `index.html` look older than the browser-cached stock one and got it a 304); `start-patched-web*.sh` append the cache-busting timestamp with `&` when the URL already has a query string (RC redirect links do), fixing the double `?` that broke them.
 - **v0.37.2** — verified on Kimi Code 0.37.2 (panel, tree expand, preview, hidden-files toggle via `show_hidden` all confirmed end-to-end); no patch changes needed. Upstream still has no native file tree / files panel (0.37.0's sidebar Open/Done/Workspaces tabs are session management, not a file explorer).
 - **v0.36.0** — verified on Kimi Code 0.36.0; no patch changes needed. README now documents the visible UI-drift caveat (stale account-menu entries) that comes with serving the 0.31-era UI build.
 - **v0.35.0** — verified on Kimi Code 0.35.0 (panel, tree expand, preview, hidden-files toggle all confirmed end-to-end); no patch changes needed.
@@ -161,7 +170,7 @@ pnpm --filter @moonshot-ai/kimi-web build           # rebuild after changes
 git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-Verified on macOS (arm64) with Kimi Code 0.31.x through 0.37.2. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
+Verified on macOS (arm64) with Kimi Code 0.31.x through 0.39.0. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
 
 ## License
 

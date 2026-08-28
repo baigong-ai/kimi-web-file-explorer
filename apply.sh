@@ -27,7 +27,7 @@ if [ ! -f "$SRC/index.html" ]; then
   exit 1
 fi
 
-# 取最近一次解压（mtime 最新）的 dist-web —— 对应当前运行的 server。
+# 取最近一次解压（mtime 最新）的 dist-web，对应当前运行的 server。
 TARGET=$(find "$CACHE_ROOT" -type d -name dist-web -exec stat -f '%m %N' {} \; 2>/dev/null \
   | sort -rn | head -1 | cut -d' ' -f2-)
 
@@ -53,6 +53,11 @@ fi
 # 打开（显示官方界面），而不会因 404 白屏。
 rsync -a "$SRC/assets/" "$TARGET/assets/"
 rsync -a "$SRC/index.html" "$SRC/boot.js" "$SRC/favicon.ico" "$TARGET/"
+# rsync -a 保留源文件 mtime，会让入口文件的 Last-Modified 比浏览器缓存的
+# 官方版更旧；静态服务按 If-Modified-Since 回 304，浏览器继续用缓存的
+# 官方 index.html（加载旧 bundle，补丁看似"没生效"）。touch 到当前时间，
+# 强制下次请求返回 200。
+touch "$TARGET/index.html" "$TARGET/boot.js"
 if [ "$MODE" != "--if-reverted" ]; then
   echo "patched: $TARGET"
 fi
