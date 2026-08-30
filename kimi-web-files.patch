@@ -92,7 +92,7 @@ index 620e9eca..7ea1af2a 100644
  //  - dev: the SPA is served by Vite; the Vite dev proxy forwards /v1, /healthz
  //    and /v1/ws to the server (see vite.config.ts), so the browser only ever
 diff --git a/apps/kimi-web/src/api/daemon/client.ts b/apps/kimi-web/src/api/daemon/client.ts
-index 3dd6cd70..00c65c07 100644
+index 3dd6cd70..1f0935e0 100644
 --- a/apps/kimi-web/src/api/daemon/client.ts
 +++ b/apps/kimi-web/src/api/daemon/client.ts
 @@ -905,7 +905,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
@@ -112,6 +112,41 @@ index 3dd6cd70..00c65c07 100644
      const data = await this.http.post<WireListDirectoryResult>(
        `/sessions/${encodeURIComponent(sessionId)}/fs:list`,
        body,
+@@ -1303,9 +1304,13 @@ export class DaemonKimiWebApi implements KimiWebApi {
+   }> {
+     const data = await this.http.get<WireAuthResult>('/auth');
+     return {
+-      ready: data.ready,
++      // kimi-code 0.39.1 renamed the readiness flag to `models_ready` (and
++      // dropped `default_model` from this response; the config snapshot/event
++      // still carries it). Accept both shapes so this build keeps working
++      // against pre-0.39.1 servers.
++      ready: data.models_ready ?? data.ready ?? false,
+       providersCount: data.providers_count,
+-      defaultModel: data.default_model,
++      defaultModel: data.default_model ?? null,
+       managedProvider: data.managed_provider
+         ? { status: data.managed_provider.status }
+         : null,
+diff --git a/apps/kimi-web/src/api/daemon/wire.ts b/apps/kimi-web/src/api/daemon/wire.ts
+index bb87f3e3..5354113c 100644
+--- a/apps/kimi-web/src/api/daemon/wire.ts
++++ b/apps/kimi-web/src/api/daemon/wire.ts
+@@ -432,9 +432,12 @@ export interface WireManagedProvider {
+ }
+ 
+ export interface WireAuthResult {
+-  ready: boolean;
++  // Pre-0.39.1 servers send `ready`; 0.39.1 renamed it to `models_ready`
++  // and dropped `default_model` from this response.
++  ready?: boolean;
++  models_ready?: boolean;
+   providers_count: number;
+-  default_model: string | null;
++  default_model?: string | null;
+   managed_provider: WireManagedProvider | null;
+ }
+ 
 diff --git a/apps/kimi-web/src/api/types.ts b/apps/kimi-web/src/api/types.ts
 index 5413f7f5..c593aabe 100644
 --- a/apps/kimi-web/src/api/types.ts

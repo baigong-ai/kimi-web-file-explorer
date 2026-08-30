@@ -89,7 +89,7 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0、0.34.0、0.35.0、0.36.0、0.37.2 和 0.39.0** 上都能正常工作；它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。在 0.39.0 上，补丁版 UI 也能通过 **Remote Control**（`kimi rc` / `kimi web --remote-control`）正常使用：补丁回移了中继注入的 server-origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），RC 隧道会把这段逻辑注入 HTML，而 0.33 之前的前端不认识它，缺了它隧道里的 UI 会把 API 请求打到中继根路径上，报"Failed to parse JSON response from GET /auth"。（一个无伤大雅的小问题：0.39.0 二进制内嵌的 web 资源在版本面板里仍自报 0.38.0，上游忘了 bump。）
+**兼容性**：构建基于最后公开的 web UI 源码（0.31 时期），已实测在 Kimi Code server **0.31.x、0.32.0、0.34.0、0.35.0、0.36.0、0.37.2、0.39.0 和 0.39.1** 上都能正常工作；它用到的会话级 fs API（`fs:list` / `fs:read`）在这些版本间是稳定的。在 0.39.0 上，补丁版 UI 也能通过 **Remote Control**（`kimi rc` / `kimi web --remote-control`）正常使用：补丁回移了中继注入的 server-origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），RC 隧道会把这段逻辑注入 HTML，而 0.33 之前的前端不认识它，缺了它隧道里的 UI 会把 API 请求打到中继根路径上，报"Failed to parse JSON response from GET /auth"。（一个无伤大雅的小问题：0.39.0 二进制内嵌的 web 资源在版本面板里仍自报 0.38.0，上游忘了 bump。）
 
 **已知代价：界面漂移。** 补丁生效期间 portal 伺服的是 0.31 时期的 UI 构建。早期这只意味着*看不到*官方新加的界面功能；到 0.36 漂移已经*肉眼可见*，比如账号菜单里会显示官方现行界面已经移除的条目。这是整体替换界面方案的固有问题，而且会随着每次官方发版继续扩大。靠重做补丁解决不了：上游已不再公开 web UI 源码（0.33.0 起只发布编译混淆后的产物，现在直接跟踪在 `apps/kimi-code/dist-web`）。想看官方现行界面，不带补丁重启一次 `kimi web` 即可还原。如果未来某个 server 版本破坏了 fs API 兼容性，在上游重新公开 web 源码之前，本项目无法跟进。
 
@@ -150,6 +150,7 @@ KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
 
 ## 更新记录
 
+- **v0.39.1** — 在 Kimi Code 0.39.1 上验证通过。一处 wire 协议变更弄坏了登录门禁：0.39.1 把 `GET /auth` 的就绪标志从 `ready` 改名为 `models_ready`（同时从该响应里删掉了 `default_model`，config 快照/事件里仍有），补丁版 UI 读到 `ready: undefined` 就当"未登录"，OAuth 授权成功后也停在登录页。`getAuth()` 现在两种形态都接受。
 - **v0.39.0** — 在 Kimi Code 0.39.0 上验证通过，包括 **Remote Control** 端到端实测（`kimi rc` 启动、远程浏览器接入、隧道内 Files 面板可用）。补丁在前端的 API 配置里回移了中继的 server-origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），没有它，RC 隧道里的 UI 会把 API 请求打到中继根路径而不是设备隧道，报 `Failed to parse JSON response from GET /auth`。脚本修复：`apply.sh` / `apply-win.sh` 同步后 `touch` 入口 HTML（rsync/cp 会保留源文件 mtime，导致补丁版 `index.html` 比浏览器缓存的官方版"更旧"而收到 304）；`start-patched-web*.sh` 在 URL 已带查询串时改用 `&` 拼接防缓存时间戳（RC 跳转链接就带查询串），修掉了把链接搞坏的双 `?`。
 - **v0.37.2** — 在 Kimi Code 0.37.2 上端到端验证通过（面板、目录展开、文件预览、`show_hidden` 隐藏文件开关均确认）；补丁无需改动。官方仍没有内置文件树/文件面板（0.37.0 的侧边栏 Open/Done/Workspaces 标签页是会话管理，不是文件浏览器）。
 - **v0.36.0** — 在 Kimi Code 0.36.0 上验证通过，补丁无需改动。README 补充了界面漂移的说明（伺服 0.31 时期界面带来的可见差异，如账号菜单残留条目）。
@@ -164,11 +165,11 @@ KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
 cd kimi-code-src
 pnpm --filter @moonshot-ai/kimi-web run typecheck   # vue-tsc
 pnpm --filter @moonshot-ai/kimi-web build           # 改动后重新构建
-# 重新生成可分发的补丁：
-git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
+# 重新生成可分发的补丁（对上游基线 commit 取 diff，已提交的改动也包含在内）：
+git diff 21185447fe0f04dbe342bebb6c6d0b364fd43daa -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.39.0 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
+已在 macOS（arm64）上用 Kimi Code 0.31.x 到 0.39.1 验证。功能完全自包含在 web 前端内，只调用稳定的、会话作用域的服务端 API，跟随上游升级应该比较省心；万一某次升级导致 `git apply` 冲突，也会是小范围的局部冲突。
 
 ## License
 

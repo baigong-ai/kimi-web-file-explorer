@@ -89,7 +89,7 @@ pnpm install
 pnpm --filter @moonshot-ai/kimi-web build
 ```
 
-**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, 0.36.0, 0.37.2, and 0.39.0** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions. On 0.39.0 the patched UI also works over **Remote Control** (`kimi rc` / `kimi web --remote-control`): the patch backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`), which the RC tunnel injects into the served HTML and which the pre-0.33 frontend doesn't know about — without it the tunneled UI calls the relay root instead of the device tunnel and fails with "Failed to parse JSON response from GET /auth". (Cosmetic quirk: the 0.39.0 binary embeds web assets that still self-report as 0.38.0 in the version panel — upstream didn't bump it.)
+**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, 0.36.0, 0.37.2, 0.39.0, and 0.39.1** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions. On 0.39.0 the patched UI also works over **Remote Control** (`kimi rc` / `kimi web --remote-control`): the patch backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`), which the RC tunnel injects into the served HTML and which the pre-0.33 frontend doesn't know about — without it the tunneled UI calls the relay root instead of the device tunnel and fails with "Failed to parse JSON response from GET /auth". (Cosmetic quirk: the 0.39.0 binary embeds web assets that still self-report as 0.38.0 in the version panel — upstream didn't bump it.)
 
 **Known trade-off — UI drift.** While the patch is in effect, the portal serves the 0.31-era UI build. Early on this only meant *missing* newer stock-UI features; by 0.36 the drift is also *visible* — for example the account menu shows entries the current official UI has since removed. This is inherent to replacing the whole UI, and it will keep growing with each release. It can't be fixed by rebasing the patch: upstream no longer publishes the web UI source (since 0.33.0 only the compiled, minified dist ships, now tracked at `apps/kimi-code/dist-web`). A plain `kimi web` restart always brings back the current stock UI. If a future server release breaks the fs APIs, this project is blocked until upstream publishes the web UI source again.
 
@@ -152,6 +152,7 @@ If a plain `kimi rc` is already running, `./apply.sh` once is enough (the tunnel
 
 ## Changelog
 
+- **v0.39.1** — verified on Kimi Code 0.39.1. One wire change broke the login gate: 0.39.1 renamed the `GET /auth` readiness flag from `ready` to `models_ready` (and dropped `default_model` from that response — the config snapshot/event still carries it), so the patched UI read `ready: undefined` as "not signed in" and stayed on the login page even after a successful OAuth authorization. `getAuth()` now accepts both shapes.
 - **v0.39.0** — verified on Kimi Code 0.39.0, including **Remote Control** end-to-end (`kimi rc`, remote browser connects, Files panel usable over the tunnel). The patch now backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`) into the frontend's API config — without it, the RC-served UI called the relay root instead of the device tunnel and failed with `Failed to parse JSON response from GET /auth`. Script fixes: `apply.sh` / `apply-win.sh` now `touch` the entry HTML after syncing (rsync/cp preserve the source mtime, which made the patched `index.html` look older than the browser-cached stock one and got it a 304); `start-patched-web*.sh` append the cache-busting timestamp with `&` when the URL already has a query string (RC redirect links do), fixing the double `?` that broke them.
 - **v0.37.2** — verified on Kimi Code 0.37.2 (panel, tree expand, preview, hidden-files toggle via `show_hidden` all confirmed end-to-end); no patch changes needed. Upstream still has no native file tree / files panel (0.37.0's sidebar Open/Done/Workspaces tabs are session management, not a file explorer).
 - **v0.36.0** — verified on Kimi Code 0.36.0; no patch changes needed. README now documents the visible UI-drift caveat (stale account-menu entries) that comes with serving the 0.31-era UI build.
@@ -167,10 +168,11 @@ cd kimi-code-src
 pnpm --filter @moonshot-ai/kimi-web run typecheck   # vue-tsc
 pnpm --filter @moonshot-ai/kimi-web build           # rebuild after changes
 # regenerate the distributable patch:
-git diff HEAD -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
+# diff against the upstream base commit, so committed changes are included too:
+git diff 21185447fe0f04dbe342bebb6c6d0b364fd43daa -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-Verified on macOS (arm64) with Kimi Code 0.31.x through 0.39.0. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
+Verified on macOS (arm64) with Kimi Code 0.31.x through 0.39.1. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
 
 ## License
 
