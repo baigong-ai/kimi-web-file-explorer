@@ -2,7 +2,7 @@
 
 [中文](README_CN.md)
 
-A **Files sidebar for the [Kimi Code](https://github.com/MoonshotAI/kimi-code) web portal** (`kimi web` / `/web`): browse the current workspace's file tree right inside the chat page, and preview any file (markdown, code, images, PDFs…) in the same panel — no more leaving the browser to look at your files.
+A **Files sidebar for the [Kimi Code](https://github.com/MoonshotAI/kimi-code) web portal** (`kimi web` / `/web`): browse the current workspace's file tree right inside the chat page, and preview any file (markdown, code, images, PDFs…) in the same panel, without leaving the browser.
 
 ![Files panel](docs/files-panel.png)
 
@@ -10,170 +10,138 @@ Click a file and it opens in-place, with a back bar to return to the tree:
 
 ![File preview](docs/file-preview.png)
 
+Unlike a full-UI replacement, this project **injects the panel into the stock UI**: Settings, the Plugins panel, multi-skill activation, and every other official feature stay exactly at your installed Kimi Code version.
+
 ## Why
 
-Kimi Code's web UI is great for long sessions, but it has no way to look at the working directory — checking a file means switching to a terminal, an editor, or Finder. The missing piece turns out to be small: the server already ships full filesystem APIs (`fs:list` / `fs:read`, with git status), and the web app already has a polished file-preview component and a right-side detail-panel system. kimi-web-files wires them together into the file tree the portal was missing (upstream even left an empty `fileTree` i18n placeholder).
+Kimi Code's web UI is great for long sessions, but it has no way to look at the working directory: checking a file means switching to a terminal, an editor, or Finder. The server already ships full filesystem APIs (`fs:list` / `fs:read`, with git status), so the missing piece is only a frontend. kimi-web-files adds that piece as a small self-contained panel, without touching the official UI code.
 
 ## How it works
 
-### The official web UI: source vs. product
-
-Kimi Code's web UI is open source — the code lives in [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) under `apps/kimi-web` (Vue 3 + TypeScript + Vite). What ships inside the `kimi` binary is **not** this source, but its build output: minified, hashed static bundles (`index-XXX.js` etc.), embedded into the single-file binary (Node SEA). At every `kimi web` launch the binary extracts those embedded assets to a cache directory, verifying each file's sha256:
+What ships inside the `kimi` binary is the compiled web UI (minified static bundles), embedded into the single-file binary. At every `kimi web` launch the binary extracts those embedded assets to a cache directory, verifying each file's sha256:
 
 ```
 ~/Library/Caches/kimi-code/web/<version>/<platform>/<manifest-hash>/dist-web
 ```
 
-The running server simply serves static files from that directory, and provides the REST/WS APIs the UI calls.
+The running server simply serves static files from that directory and provides the REST/WS APIs the UI calls.
 
-So the relationship is: **binary-embedded web code = official source, compiled**. You can't add a feature to the extracted bundles (minified machine-ish output, and the sha256 check would revert it anyway) — the source is the only sane place to work.
-
-### What this project does
+`apply.sh` adds the Files panel **on top of the stock assets**:
 
 ```
-MoonshotAI/kimi-code (apps/kimi-web source)
-        │
-        ├─ official build ──► embedded in kimi binary ──► extracted to dist-web ──► served (stock UI)
-        │
-        └─ git apply kimi-web-files.patch
-                │
-                pnpm build (same Vite toolchain)
-                │
-                dist/  =  stock web UI + Files panel   (≈99% identical, +715 lines)
-                │
-                apply.sh: rsync dist/ → dist-web of the RUNNING server
-                │
-                ► server now serves the patched UI until it stops
+dist-web/
+├── assets/
+│   ├── index-XXX.js …        ← official bundles, untouched
+│   ├── kimi-files-panel.js   ← copied in (the panel, one self-contained script)
+│   └── kimi-files-panel.css  ← copied in
+└── index.html                ← +1 <link> and +1 <script defer> line
 ```
 
-1. Clone the official source and apply `kimi-web-files.patch` — the whole feature as a clean diff (2 new files, 11 small wiring edits).
-2. Build with the same toolchain upstream uses. The resulting `dist/` is the **complete** web UI — stock plus the Files panel.
-3. `apply.sh` replaces the running server's asset cache with this build. Timing matters: the binary re-extracts (and thus restores) stock assets at **every launch**, but a running server reads assets from disk per request. So the patch must be applied **after** the server has started. Note that all `kimi web` processes of the same version share one cache directory — the patch takes effect for every same-version portal at once, and any single new `kimi web` launch reverts all of them (the watchdog in `start-patched-web.sh` detects this and re-applies automatically).
-
-The server can't tell the difference — it serves whatever static files sit in the cache directory and answers the same stable, session-scoped fs APIs either way.
+- **Nothing official is modified or replaced.** The two panel files are additive; `index.html` gains two lines. The portal you get is the 100% official UI of your installed version, plus a Files tab at the right edge of the window. New Kimi Code features (the Plugins panel in Settings, activating multiple skills in one message, and whatever ships next) keep working while the panel is injected, because the app code is byte-for-byte stock.
+- **No build step, no source clone.** The panel is a hand-written, dependency-free vanilla JS app (~1000 lines) that talks to the server's stable, session-scoped fs REST APIs (`POST /api/v1/sessions/{id}/fs:list` etc.) with the same Bearer credential the official UI uses. Installing is just cloning this repo.
+- **Same launch timing rule as any cache patch.** The binary re-extracts (and thus restores) stock `index.html` at **every launch**, but a running server reads assets from disk per request. So the injection must be applied **after** the server has started. All `kimi web` processes of the same version share one cache directory: the injection takes effect for every same-version portal at once, and any single new `kimi web` launch reverts all of them (the watchdog in `start-patched-web.sh` detects this and re-injects automatically).
 
 ### Where the safety comes from
 
 - **Nothing permanent is modified.** The `kimi` binary, `~/.kimi-code`, and the official assets inside the binary are never touched. The only thing changed is the contents of a cache directory that the binary considers disposable.
-- **Rollback is automatic and unavoidable — in a good way.** The sha256-verified re-extraction on every launch means a plain `kimi web` restart always brings back the 100% stock UI. You can't "break" your installation with this patch; a restart undoes it.
-- **The blast radius is one browser page.** The patch only changes which static files the local server hands to your browser. It adds no server routes, no elevated permissions, no network calls beyond the existing same-origin APIs.
+- **Rollback is automatic.** The sha256-verified re-extraction on every launch means a plain `kimi web` restart always brings back the 100% stock entry page. You can't break your installation with this project; a restart undoes it.
+- **The blast radius is one browser page.** The panel only changes which static files the local server hands to your browser. It adds no server routes, no elevated permissions, no network calls beyond the existing same-origin APIs.
 
 ## Features
 
 - File tree of the session's workspace root, directories loaded lazily on expand
 - `Find` box to filter loaded files by name; git-change marker on modified entries
-- Hidden-files toggle (eye button in the panel header): dotfiles like `.gitignore` are hidden by default, one click lists them — works through the server's `show_hidden` fs-list option
-- In-panel preview via the stock FilePreview component: rendered markdown, syntax-highlighted code, images, PDF, CSV… with download / open-in-editor / reveal-in-Finder actions
-- Chinese & English UI (follows the portal's language setting)
-- Follows the portal's own conventions: right-side detail layer, `Esc` to close, resets on session switch
+- Hidden-files toggle (eye button in the panel header): dotfiles are hidden by default, one click lists them, via the server's `show_hidden` fs-list option
+- In-panel preview: rendered markdown (with a source toggle), code and text with line numbers, images, PDF, CSV tables; with download / open-in-editor / reveal-in-Finder actions
+- Follows the portal's language (Chinese/English) and light/dark theme
+- Floating tab on the right edge; overlay panel with a draggable width; `Esc` closes the preview first, then the panel; state resets on session switch
+- Works over **Remote Control** (`kimi rc` / `kimi web --remote-control`): the panel mirrors the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`), so API calls tunnel to your machine correctly
+
+Known limitations compared to deeply integrated UI: code preview has no syntax highlighting (plain monospace with line numbers), and relative-path images inside markdown documents are not rendered.
 
 ## Install
 
-Requirements: Node.js ≥ 24.15, pnpm 10 (the same toolchain as kimi-code itself), macOS, Linux, or Windows (via Git Bash — use the `*-win.sh` scripts, thanks [@chulongYang](https://github.com/chulongYang)).
+Requirements: macOS, Linux, or Windows (Git Bash; use the `*-win.sh` scripts). No Node.js, no pnpm, no source checkout.
 
 ```bash
-# 1. Clone the official source and check out the web UI code.
-#    NOTE: upstream removed apps/kimi-web from main in 0.33.0, so a plain
-#    clone of main no longer contains the web UI source. Pin the last
-#    commit that still has it:
-git clone --depth 1 --filter=blob:none --no-checkout https://github.com/MoonshotAI/kimi-code.git kimi-code-src
-cd kimi-code-src
-git fetch --depth 1 origin 21185447fe0f04dbe342bebb6c6d0b364fd43daa
-git checkout FETCH_HEAD
-
-# 2. Apply the feature patch
-git apply /path/to/kimi-web-files/kimi-web-files.patch
-
-# 3. Build the web app (takes ~2 min for install, ~20s for build)
-pnpm install
-pnpm --filter @moonshot-ai/kimi-web build
+git clone https://github.com/<your-fork>/kimi-web-files.git
+cd kimi-web-files
 ```
-
-**Compatibility:** the build is from the last public web-UI source (0.31-era), and is verified working against Kimi Code servers **0.31.x, 0.32.0, 0.34.0, 0.35.0, 0.36.0, 0.37.2, 0.39.0, and 0.39.1** — the session-scoped fs APIs it uses (`fs:list` / `fs:read`) are stable across these versions. On 0.39.0 the patched UI also works over **Remote Control** (`kimi rc` / `kimi web --remote-control`): the patch backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`), which the RC tunnel injects into the served HTML and which the pre-0.33 frontend doesn't know about — without it the tunneled UI calls the relay root instead of the device tunnel and fails with "Failed to parse JSON response from GET /auth". (Cosmetic quirk: the 0.39.0 binary embeds web assets that still self-report as 0.38.0 in the version panel — upstream didn't bump it.)
-
-**Known trade-off — UI drift.** While the patch is in effect, the portal serves the 0.31-era UI build. Early on this only meant *missing* newer stock-UI features; by 0.36 the drift is also *visible* — for example the account menu shows entries the current official UI has since removed. This is inherent to replacing the whole UI, and it will keep growing with each release. It can't be fixed by rebasing the patch: upstream no longer publishes the web UI source (since 0.33.0 only the compiled, minified dist ships, now tracked at `apps/kimi-code/dist-web`). A plain `kimi web` restart always brings back the current stock UI. If a future server release breaks the fs APIs, this project is blocked until upstream publishes the web UI source again.
-
-The scripts expect this layout (sibling directories under one parent folder):
-
-```
-some-folder/
-├── kimi-code-src/     # official source clone, patched + built
-└── kimi-web-files/    # this repo
-```
-
-"Next to each other" matters because `apply.sh` looks for the build output at `<this-repo>/../kimi-code-src/apps/kimi-web/dist` by default. Any other layout works too — just point the scripts at it explicitly: `KIMI_WEB_DIST=/path/to/kimi-web/dist ./apply.sh`.
-
-**Windows:** use the Git Bash ports `apply-win.sh` / `start-patched-web-win.sh` instead (cache dir under `%LOCALAPPDATA%\kimi-code\web`, `cp` instead of `rsync`, browser opened via `cmd /c start`). One gotcha: with `core.autocrlf=true` the `.patch` files check out as CRLF and `git apply` rejects them — convert once with `sed -i 's/\r$//' kimi-web-files.patch` (same for the optional patch) before applying.
 
 ## Usage
 
 ```bash
-# Option A (recommended): start the portal, auto-patch once it's up, and only
+# Option A (recommended): start the portal, auto-inject once it's up, and only
 # then open the browser
 ./start-patched-web.sh
 
 # Option B: the portal is already running (`kimi web` or `/web` in the TUI) —
-# just patch the live server
+# just inject into the live server
 ./apply.sh
 ```
 
-Then click the new folder icon in the chat header. `start-patched-web.sh` opens the browser only *after* the patch has fully landed, and adds a timestamp query to the URL so the browser re-fetches the entry HTML — the kimi server sends no cache headers, so Safari heuristically caches the old entry page, which can point at a bundle that has since been replaced and render a blank page. If you ever do hit a blank page, one hard refresh (Cmd+Shift+R) fixes it.
+Then click the new Files tab on the right edge of the window. `start-patched-web.sh` opens the browser only *after* the injection has landed, and adds a timestamp query to the URL so the browser re-fetches the entry HTML (the kimi server sends no cache headers, so browsers can heuristically cache the old entry page). If you ever hit a stale page, one hard refresh (Cmd+Shift+R) fixes it.
 
-**Remote Control (kimi ≥ 0.39, experimental):** the patched UI works over the RC tunnel too — the remote browser is served this same patched build, Files panel included. Start through the wrapper so the patch lands after the server (and its tunnel) is up:
+**Remote Control (kimi ≥ 0.39, experimental):** start through the wrapper so the injection lands after the server (and its tunnel) is up:
 
 ```bash
 KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
 ```
 
-If a plain `kimi rc` is already running, `./apply.sh` once is enough (the tunnel serves whatever is in the shared cache directory). Then open the `code-rc.kimi.com` link — or scan the QR code — and log in with your Kimi account.
+If a plain `kimi rc` is already running, `./apply.sh` once is enough (the tunnel serves whatever is in the shared cache directory). Then open the `code-rc.kimi.com` link, or scan the QR code, and log in with your Kimi account.
 
-**Prefer the stock portal? Just use it — nothing to undo.** Nothing in this project runs by itself: `apply.sh` only executes when you invoke it manually (or via the watchdog inside `start-patched-web.sh`). It never hooks into `kimi web` startup. So whenever you want the official portal, start it the usual way — `kimi web`, or `/web` in the TUI. At every launch the `kimi` binary re-extracts its embedded, sha256-verified stock assets into the cache directory, which means two things: the portal you get is 100% official, and that very launch wipes the patch for every same-version portal sharing the cache. There is nothing to uninstall and no residue. Want the Files panel back later? Run `./apply.sh` once (or start via `start-patched-web.sh`).
+**Prefer the stock portal? Just use it; nothing to undo.** Nothing in this project runs by itself: `apply.sh` only executes when you invoke it (or via the watchdog inside `start-patched-web.sh`). Whenever you want the plain official portal, start it the usual way: `kimi web`, or `/web` in the TUI. At every launch the `kimi` binary re-extracts its embedded, sha256-verified stock `index.html`, which removes the injection. There is nothing to uninstall and no residue.
 
-**Running several portals at once:** all `kimi web` processes of the same version share one dist-web cache directory — whether started via `kimi web`, `start-patched-web.sh`, or `/web` in the TUI. Two direct consequences:
+**Running several portals at once:** all `kimi web` processes of the same version share one dist-web cache directory. Two direct consequences:
 
-- Once patched, **every** running same-version portal immediately has the Files panel (including one opened via `/web`) — no need to patch each one.
-- Any new `kimi web` launch re-extracts the stock assets and wipes the patch for **all** of them. `start-patched-web.sh` has a built-in watchdog: while it runs, it checks every 3 seconds and re-applies the patch if it got wiped. Without it, just run `apply.sh` once more after such a launch.
+- Once injected, **every** running same-version portal immediately has the Files panel (including one opened via `/web`), with no need to inject each one.
+- Any new `kimi web` launch re-extracts the stock assets and removes the injection for **all** of them. `start-patched-web.sh` has a built-in watchdog: while it runs, it checks every 3 seconds and re-injects if the injection got wiped. Without it, just run `apply.sh` once more after such a launch.
 
-**Patch lifetime:** the patch lasts until some `kimi web` launch reverts it. Opening a portal with plain `/web` alone never shows the Files panel (that launch is itself a revert) — but as long as the patch is in effect, a `/web`-opened portal has the panel too.
+**After a Kimi Code upgrade:** the new version extracts a fresh cache directory, so the portal returns to stock automatically. Run `apply.sh` / `start-patched-web.sh` again; no rebuild or re-download is needed. The panel depends only on the stable session-scoped fs REST APIs, so it tracks upstream releases closely. If a future release ever breaks those APIs, the panel shows an error and the rest of the portal is unaffected.
 
-**After a Kimi Code upgrade:** the new version extracts a fresh cache directory, so the portal returns to stock automatically. Rebuild (if upstream changed the web app, re-clone and re-apply first), then run `apply.sh` / `start-patched-web.sh` again.
+## Legacy: source-patch mode
+
+Before 0.40.1 this project worked differently: it rebuilt the whole web UI from the last public source (0.31-era) with the panel integrated, and replaced the server's entire asset set. That gave deeper integration (the stock FilePreview component, the right-side detail layer) but froze the whole UI at 0.31: newer official features such as the Plugins panel in Settings (0.40.0) were missing while the patch was active, and upstream stopped publishing the web UI source in 0.33.0.
+
+The old `kimi-web-files.patch` is kept in the repo for reference. The injection mode above replaces it for everyday use; the source-patch workflow (`kimi-code-src` clone + pnpm build + `KIMI_WEB_DIST=...`) is no longer needed.
 
 ## Files
 
 | file | what it is |
 |---|---|
-| `kimi-web-files.patch` | the feature itself: a git patch against `apps/kimi-web` in MoonshotAI/kimi-code (2 new files, 12 touched, ~100 insertions of wiring + the new tree/panel) |
-| `apply.sh` | sync the built web app into the running server's asset cache |
-| `apply-win.sh` | Windows (Git Bash) port of `apply.sh` — cache under `%LOCALAPPDATA%`, `cp` instead of `rsync` |
-| `start-patched-web.sh` | `kimi web` wrapper: waits for the server to listen, runs `apply.sh`, then watchdogs it — re-applies automatically if another `kimi web` launch wipes the patch |
-| `start-patched-web-win.sh` | Windows (Git Bash) port of `start-patched-web.sh` — `curl` readiness probe, browser via `cmd /c start` |
+| `panel/kimi-files-panel.js` | the panel itself: one self-contained vanilla-JS script (tree, preview, markdown renderer, i18n, theming), injected into the stock portal |
+| `panel/kimi-files-panel.css` | panel styles, scoped under the `.kfp-` prefix, light/dark |
+| `apply.sh` | copy the two panel files into the running server's asset cache and add the `<link>` / `<script>` tags to `index.html` |
+| `apply-win.sh` | Windows (Git Bash) port of `apply.sh`: cache under `%LOCALAPPDATA%`, GNU sed/stat |
+| `start-patched-web.sh` | `kimi web` wrapper: waits for the server to listen, runs `apply.sh`, then watchdogs it, re-injecting automatically if another `kimi web` launch wipes the injection |
+| `start-patched-web-win.sh` | Windows (Git Bash) port of `start-patched-web.sh` |
+| `kimi-web-files.patch` | legacy: the old full-UI source patch against `apps/kimi-web` (kept for reference; not needed for injection mode) |
 | `cdp-shot.mjs` | dev tool: drives headless Chrome over CDP to screenshot the panel end-to-end |
 | `docs/` | screenshots |
 
 ## Changelog
 
-- **v0.39.1** — verified on Kimi Code 0.39.1. One wire change broke the login gate: 0.39.1 renamed the `GET /auth` readiness flag from `ready` to `models_ready` (and dropped `default_model` from that response — the config snapshot/event still carries it), so the patched UI read `ready: undefined` as "not signed in" and stayed on the login page even after a successful OAuth authorization. `getAuth()` now accepts both shapes.
-- **v0.39.0** — verified on Kimi Code 0.39.0, including **Remote Control** end-to-end (`kimi rc`, remote browser connects, Files panel usable over the tunnel). The patch now backports the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`) into the frontend's API config — without it, the RC-served UI called the relay root instead of the device tunnel and failed with `Failed to parse JSON response from GET /auth`. Script fixes: `apply.sh` / `apply-win.sh` now `touch` the entry HTML after syncing (rsync/cp preserve the source mtime, which made the patched `index.html` look older than the browser-cached stock one and got it a 304); `start-patched-web*.sh` append the cache-busting timestamp with `&` when the URL already has a query string (RC redirect links do), fixing the double `?` that broke them.
-- **v0.37.2** — verified on Kimi Code 0.37.2 (panel, tree expand, preview, hidden-files toggle via `show_hidden` all confirmed end-to-end); no patch changes needed. Upstream still has no native file tree / files panel (0.37.0's sidebar Open/Done/Workspaces tabs are session management, not a file explorer).
-- **v0.36.0** — verified on Kimi Code 0.36.0; no patch changes needed. README now documents the visible UI-drift caveat (stale account-menu entries) that comes with serving the 0.31-era UI build.
-- **v0.35.0** — verified on Kimi Code 0.35.0 (panel, tree expand, preview, hidden-files toggle all confirmed end-to-end); no patch changes needed.
+- **v0.40.1** — **rewritten as an injection into the stock UI** instead of a full-UI replacement. The portal's own code is no longer touched, so current and future official features (the Plugins panel in Settings, activating multiple skills in one message, both added in 0.40.0) keep working while the Files panel is active, and the UI-drift caveat is gone for good. The panel is now a self-contained vanilla-JS app (`panel/kimi-files-panel.js` + `.css`) with its own preview renderers; install no longer needs Node/pnpm or the kimi-code source clone. Verified on Kimi Code 0.40.1: file tree, lazy expand, markdown/code/image preview, hidden-files toggle, git markers, and the stock Plugins panel side by side. Note: the Settings dialog variant depends on the session backend; the full variant (with the Plugins tab) shows on the default v2 backend.
+- **v0.39.1** — verified on Kimi Code 0.39.1. One wire change broke the login gate: 0.39.1 renamed the `GET /auth` readiness flag from `ready` to `models_ready`, so the patched UI read `ready: undefined` as "not signed in" and stayed on the login page after a successful OAuth authorization. `getAuth()` now accepts both shapes.
+- **v0.39.0** — verified on Kimi Code 0.39.0, including **Remote Control** end-to-end (`kimi rc`, remote browser connects, Files panel usable over the tunnel). The patch backported the relay's server-origin override (`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`) into the frontend's API config. Script fixes: `apply.sh` / `apply-win.sh` now `touch` the entry HTML after syncing (rsync/cp preserved the source mtime, which made the patched `index.html` look older than the browser-cached stock one and got it a 304); `start-patched-web*.sh` append the cache-busting timestamp with `&` when the URL already has a query string (RC redirect links do), fixing the double `?` that broke them.
+- **v0.37.2** — verified on Kimi Code 0.37.2 (panel, tree expand, preview, hidden-files toggle via `show_hidden` all confirmed end-to-end); no patch changes needed. Upstream still had no native file tree / files panel (0.37.0's sidebar Open/Done/Workspaces tabs are session management, not a file explorer).
+- **v0.36.0** — verified on Kimi Code 0.36.0; no patch changes needed. Documented the visible UI-drift caveat (stale account-menu entries) that came with serving the 0.31-era UI build.
+- **v0.35.0** — verified on Kimi Code 0.35.0; no patch changes needed.
 - **v0.34.1** — hidden-files toggle (eye button in the panel header): dotfiles are hidden by default, one click lists them via the server's `show_hidden` option. Verified on Kimi Code 0.34.0.
 - **v0.34.0** — verified on Kimi Code 0.34.0; Windows (Git Bash) scripts added (thanks [@chulongYang](https://github.com/chulongYang)).
 - **v0.32.0** — first tracked release: the Files panel, verified on 0.31.x / 0.32.0.
 
 ## Development
 
+The panel has no build step: edit `panel/kimi-files-panel.js` / `.css`, then re-run `./apply.sh` (it version-busts the script URL by content hash) and hard-refresh the portal tab. Keep everything dependency-free and scoped under the `kfp-` prefix.
+
+The legacy source patch can still be regenerated against its base commit if ever needed:
+
 ```bash
 cd kimi-code-src
-pnpm --filter @moonshot-ai/kimi-web run typecheck   # vue-tsc
-pnpm --filter @moonshot-ai/kimi-web build           # rebuild after changes
-# regenerate the distributable patch:
-# diff against the upstream base commit, so committed changes are included too:
 git diff 21185447fe0f04dbe342bebb6c6d0b364fd43daa -- apps/kimi-web > /path/to/kimi-web-files/kimi-web-files.patch
 ```
 
-Verified on macOS (arm64) with Kimi Code 0.31.x through 0.39.1. The feature is self-contained in the web app and talks only to stable, session-scoped server APIs, so it should track upstream releases closely; if a future kimi-code release breaks `git apply`, the conflicts will be small and localized.
-
 ## License
 
-MIT. The patch targets [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code), which is MIT-licensed as well. Not affiliated with Moonshot AI.
+MIT. Not affiliated with Moonshot AI.
