@@ -4,6 +4,12 @@
 
 A **Files sidebar for the [Kimi Code](https://github.com/MoonshotAI/kimi-code) web portal** (`kimi web` / `/web`): browse the current workspace's file tree right inside the chat page, and preview any file (markdown, code, images, PDFs…) in the same panel, without leaving the browser.
 
+The Files tab sits at the right edge of the stock UI (red arrow), shown here with the official Plugins panel open in Settings; both work at the same time:
+
+![Files tab next to the stock Plugins panel](docs/plugins-panel.png)
+
+Open it to browse the workspace's file tree:
+
 ![Files panel](docs/files-panel.png)
 
 Click a file and it opens in-place, with a back bar to return to the tree:

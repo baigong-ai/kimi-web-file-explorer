@@ -4,6 +4,12 @@
 
 给 [Kimi Code](https://github.com/MoonshotAI/kimi-code) 的 web portal（`kimi web` / `/web`）加了一个 **Files 文件面板**：在聊天页里直接浏览当前工作目录的文件树，点击文件在同一面板内预览（markdown、代码、图片、PDF 等），不用离开浏览器去看文件。
 
+Files 页签就在官方原版 UI 的窗口右边缘（红色箭头处），图中同时打开了设置里的官方插件面板，两者互不影响：
+
+![Files 页签与官方插件面板同框](docs/plugins-panel.png)
+
+点开页签即可浏览当前工作目录的文件树：
+
 ![Files 面板](docs/files-panel.png)
 
 点击文件后在原面板内打开，顶部有返回栏可以回到文件树：
