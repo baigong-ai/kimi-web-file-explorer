@@ -63,7 +63,7 @@ dist-web/
 - 右边缘悬浮页签；覆盖式面板，宽度可拖拽；`Esc` 先关预览再关面板；切换会话时状态自动重置
 - 支持 **Remote Control**（`kimi rc` / `kimi web --remote-control`）：面板复刻了中继的 server origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），API 调用经隧道正确回到你的机器
 
-与深度集成 UI 相比的已知限制：代码预览没有语法高亮（等宽字体加行号）；markdown 文档里的相对路径图片不渲染。
+与深度集成 UI 相比的已知限制：代码预览没有语法高亮（等宽字体加行号）；markdown 文档里的相对路径图片不渲染；（Kimi Code 0.41.0 起）官方的划词标注功能不覆盖面板自己的预览。
 
 ## 安装
 
@@ -126,6 +126,7 @@ KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
 
 ## 更新记录
 
+- **v0.41.0** — 在 Kimi Code 0.41.0 上验证通过；面板无需改动。0.41.0 的 Web 版新功能（tower 多智能体协作模式、权限模式更名、右侧面板 Bash 命令改终端样式）都在官方 UI 内，与注入的面板并存可用。一个预期内的局限：新增的**划词标注**（在消息、文件预览、diff 与每轮改动面板或终端中选中文字，添加评论或引用到对话）在 Files 面板自己的预览里不可用；面板是独立的自包含应用，不共享官方 UI 的标注层。官方 UI 自身区域内的划词标注不受影响。
 - **v0.40.1** — **重写为注入官方原版 UI**，不再整包替换。门户自身代码完全不动，因此当前和未来的官方功能（设置里的插件面板、一条消息激活多个技能，均为 0.40.0 新增）在文件面板启用期间照常工作，UI 漂移问题彻底消失。面板改为自包含的原生 JS 应用（`panel/kimi-files-panel.js` + `.css`），自带预览渲染器；安装不再需要 Node/pnpm 和 kimi-code 源码克隆。已在 Kimi Code 0.40.1 上验证：文件树、懒加载展开、markdown/代码/图片预览、隐藏文件开关、git 标记，以及官方插件面板并存。注意：设置对话框的形态取决于会话后端，完整版（含插件页签）在默认的 v2 后端下显示。
 - **v0.39.1** — 在 Kimi Code 0.39.1 上验证通过。一处 wire 变更曾破坏登录门禁：0.39.1 把 `GET /auth` 的就绪标志从 `ready` 改名为 `models_ready`，导致补丁版 UI 把 `ready: undefined` 当成"未登录"，OAuth 授权成功后仍停留在登录页。`getAuth()` 现在两种格式都接受。
 - **v0.39.0** — 在 Kimi Code 0.39.0 上验证通过，包括 **Remote Control** 端到端（`kimi rc`、远程浏览器连接、文件面板经隧道可用）。补丁把中继的 server origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`）回移植到了前端 API 配置中。脚本修复：`apply.sh` / `apply-win.sh` 同步后 `touch` 入口 HTML（rsync/cp 保留源文件 mtime，会让补丁版 `index.html` 比浏览器缓存的官方版更旧而被回 304）；`start-patched-web*.sh` 在 URL 已有查询串时改用 `&` 拼接时间戳（RC 跳转链接就是如此），修掉了把链接搞坏的双 `?` 问题。
