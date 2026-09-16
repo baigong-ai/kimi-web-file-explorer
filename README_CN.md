@@ -32,7 +32,7 @@ Kimi Code 的 web UI 很适合长时间会话，但没法直接看工作目录�
 
 运行中的 server 直接从这个目录读静态文件，同时提供 UI 调用的 REST/WS API。
 
-`apply.sh` 在**官方资源之上**叠加文件面板：
+`kimi-files-show.sh` 在**官方资源之上**叠加文件面板：
 
 ```
 dist-web/
@@ -45,7 +45,7 @@ dist-web/
 
 - **不改、不替换任何官方文件。** 两个面板文件是纯粹的新增；`index.html` 只多两行。你拿到的门户就是你安装版本的 100% 官方 UI，只是窗口右边缘多了一个文件页签。Kimi Code 的新功能（设置里的插件面板、一条消息激活多个技能、以及以后发布的任何功能）在注入面板期间全部照常工作，因为应用代码逐字节都是官方的。
 - **没有构建步骤，不需要克隆源码。** 面板是手写的零依赖原生 JS 应用（约 1000 行），用与官方 UI 相同的 Bearer 凭证调用 server 稳定的会话级 fs REST API（`POST /api/v1/sessions/{id}/fs:list` 等）。安装只需要克隆本仓库。
-- **与缓存补丁相同的启动时序规则。** 二进制在**每次启动**时重新解压并还原官方 `index.html`，但运行中的 server 按请求从磁盘读文件。所以注入必须在 server 启动**之后**进行。同版本的所有 `kimi web` 进程共享一个缓存目录：注入对所有同版本门户同时生效，而任何一次新的 `kimi web` 启动都会把注入整体还原（`start-patched-web.sh` 的看门狗会检测到并自动重新注入）。
+- **与缓存补丁相同的启动时序规则。** 二进制在**每次启动**时重新解压并还原官方 `index.html`，但运行中的 server 按请求从磁盘读文件。所以注入必须在 server 启动**之后**进行。同版本的所有 `kimi web` 进程共享一个缓存目录：注入对所有同版本门户同时生效，而任何一次新的 `kimi web` 启动都会把注入整体还原（`kimi-files.sh` 的看门狗会检测到并自动重新注入）。
 
 ### 安全性从何而来
 
@@ -60,7 +60,7 @@ dist-web/
 - 隐藏文件开关（面板头部的眼睛按钮）：默认不显示点开头文件，点一下即列出，走的是 server 的 `show_hidden` 选项
 - 面板内预览：渲染后的 markdown（可切源码）、带行号的代码和文本、图片、PDF、CSV 表格；附下载、在编辑器打开、在访达中显示操作
 - 跟随门户的语言（中/英）和明暗主题
-- 右边缘悬浮页签；覆盖式面板，宽度可拖拽；`Esc` 先关预览再关面板；切换会话时状态自动重置
+- 右边缘悬浮页签，可用鼠标或手指触摸沿右边缘上下拖动，停放到任意高度（位置持久保存，刷新后恢复）；覆盖式面板，宽度可拖拽；`Esc` 先关预览再关面板；切换会话时状态自动重置
 - 支持 **Remote Control**（`kimi rc` / `kimi web --remote-control`）：面板复刻了中继的 server origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`），API 调用经隧道正确回到你的机器
 
 与深度集成 UI 相比的已知限制：代码预览没有语法高亮（等宽字体加行号）；markdown 文档里的相对路径图片不渲染；（Kimi Code 0.41.0 起）官方的划词标注功能不覆盖面板自己的预览。
@@ -78,31 +78,33 @@ cd kimi-web-files
 
 ```bash
 # 方式 A（推荐）：启动门户，就绪后自动注入，然后才打开浏览器
-./start-patched-web.sh
+./kimi-files.sh
 
 # 方式 B：门户已经在运行（`kimi web` 或 TUI 里的 `/web`），
 # 直接向运行中的 server 注入
-./apply.sh
+./kimi-files-show.sh
 ```
 
-然后点击窗口右边缘新出现的文件页签。`start-patched-web.sh` 只在注入完成后才打开浏览器，并在 URL 上加时间戳查询串，强制浏览器重新拉取入口 HTML（kimi server 不发缓存头，浏览器可能会启发式缓存旧入口页）。如果偶尔遇到旧页面，强制刷新一次（Cmd+Shift+R）即可。
+然后点击窗口右边缘新出现的文件页签。`kimi-files.sh` 只在注入完成后才打开浏览器，并在 URL 上加时间戳查询串，强制浏览器重新拉取入口 HTML（kimi server 不发缓存头，浏览器可能会启发式缓存旧入口页）。如果偶尔遇到旧页面，强制刷新一次（Cmd+Shift+R）即可。
 
-**Remote Control（kimi ≥ 0.39，实验性）：** 通过包装脚本启动，让注入在 server（及其隧道）就绪后落地：
+**Remote Control（kimi 0.42.0 起转为正式功能；0.39–0.41 为实验性）：** 通过包装脚本启动，让注入在 server（及其隧道）就绪后落地：
 
 ```bash
-KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
+./kimi-files.sh --remote-control
 ```
 
-如果已有 `kimi rc` 在跑，执行一次 `./apply.sh` 即可（隧道服务的就是共享缓存目录的内容）。然后打开 `code-rc.kimi.com` 链接（或扫码），用 Kimi 账号登录。
+（0.39–0.41 时期命令相同，但需要加 `KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1` 前缀；0.42.0 起该开关已移除。）
 
-**想用纯官方门户？直接用就行，没有需要卸载的东西。** 本项目没有任何自启动行为：`apply.sh` 只在你手动调用时执行（或由 `start-patched-web.sh` 的看门狗调用）。想要官方门户就按平常方式启动：`kimi web` 或 TUI 里的 `/web`。每次启动时 `kimi` 二进制都会重新解压经过 sha256 校验的官方 `index.html`，注入随之移除。没有需要卸载的东西，也没有残留。
+如果已有 `kimi rc` 在跑，执行一次 `./kimi-files-show.sh` 即可（隧道服务的就是共享缓存目录的内容）。然后打开 `code-rc.kimi.com` 链接（或扫码），用 Kimi 账号登录。
+
+**想用纯官方门户？直接用就行，没有需要卸载的东西。** 本项目没有任何自启动行为：`kimi-files-show.sh` 只在你手动调用时执行（或由 `kimi-files.sh` 的看门狗调用）。想要官方门户就按平常方式启动：`kimi web` 或 TUI 里的 `/web`。每次启动时 `kimi` 二进制都会重新解压经过 sha256 校验的官方 `index.html`，注入随之移除。没有需要卸载的东西，也没有残留。
 
 **同时跑多个门户：** 同版本的所有 `kimi web` 进程共享一个 dist-web 缓存目录。两个直接推论：
 
 - 一旦注入，**所有**正在运行的同版本门户立刻都有文件面板（包括用 `/web` 打开的），无需逐个注入。
-- 任何一次新的 `kimi web` 启动都会重新解压官方资源，把**所有**门户的注入移除。`start-patched-web.sh` 内置看门狗：运行期间每 3 秒检查一次，被移除就自动重新注入。没有看门狗时，在这种启动之后再跑一次 `apply.sh` 即可。
+- 任何一次新的 `kimi web` 启动都会重新解压官方资源，把**所有**门户的注入移除。`kimi-files.sh` 内置看门狗：运行期间每 3 秒检查一次，被移除就自动重新注入。没有看门狗时，在这种启动之后再跑一次 `kimi-files-show.sh` 即可。
 
-**Kimi Code 升级之后：** 新版本会解压出新的缓存目录，门户自动回到官方原版。再跑一次 `apply.sh` / `start-patched-web.sh` 即可，不需要重新构建或下载。面板只依赖稳定的会话级 fs REST API，因此能紧跟上游版本。如果未来某个版本改动了这些 API，面板会显示错误，门户其余功能不受影响。
+**Kimi Code 升级之后：** 新版本会解压出新的缓存目录，门户自动回到官方原版。再跑一次 `kimi-files-show.sh` / `kimi-files.sh` 即可，不需要重新构建或下载。面板只依赖稳定的会话级 fs REST API，因此能紧跟上游版本。如果未来某个版本改动了这些 API，面板会显示错误，门户其余功能不受影响。
 
 ## 旧模式：源码补丁
 
@@ -116,20 +118,21 @@ KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
 |---|---|
 | `panel/kimi-files-panel.js` | 面板本体：一个自包含的原生 JS 脚本（目录树、预览、markdown 渲染、i18n、主题），注入到官方门户 |
 | `panel/kimi-files-panel.css` | 面板样式，`.kfp-` 前缀隔离，明暗双主题 |
-| `apply.sh` | 把两个面板文件拷进运行中 server 的资源缓存，并往 `index.html` 加 `<link>` / `<script>` 标签 |
-| `apply-win.sh` | `apply.sh` 的 Windows（Git Bash）移植：缓存位于 `%LOCALAPPDATA%`，使用 GNU sed/stat |
-| `start-patched-web.sh` | `kimi web` 包装脚本：等 server 就绪后执行 `apply.sh`，然后看门狗值守，注入被其他 `kimi web` 启动覆盖时自动重打 |
-| `start-patched-web-win.sh` | `start-patched-web.sh` 的 Windows（Git Bash）移植 |
+| `kimi-files-show.sh` | 把两个面板文件拷进运行中 server 的资源缓存，并往 `index.html` 加 `<link>` / `<script>` 标签 |
+| `kimi-files-show-win.sh` | `kimi-files-show.sh` 的 Windows（Git Bash）移植：缓存位于 `%LOCALAPPDATA%`，使用 GNU sed/stat |
+| `kimi-files.sh` | `kimi web` 包装脚本：等 server 就绪后执行 `kimi-files-show.sh`，然后看门狗值守，注入被其他 `kimi web` 启动覆盖时自动重打 |
+| `kimi-files-win.sh` | `kimi-files.sh` 的 Windows（Git Bash）移植 |
 | `kimi-web-files.patch` | 旧模式：针对 `apps/kimi-web` 的整包源码补丁（保留供参考，注入模式不需要） |
 | `cdp-shot.mjs` | 开发工具：通过 CDP 驱动无头 Chrome 对面板做端到端截图 |
 | `docs/` | 截图 |
 
 ## 更新记录
 
+- **v0.43.1** — 在 Kimi Code 0.43.1 上验证通过；无兼容性改动。面板新功能：文件页签不再固定在右边缘垂直居中位置，可上下拖动停放到任意高度；位置按视口高度比例存储，刷新页面和调整窗口大小后都会恢复。拖动改用 Pointer Events 实现，手机浏览器（比如通过 Remote Control 在手机上）触摸拖动同样可用，不再仅限鼠标；面板宽度拖拽条也一并做了同样改造。另外：Remote Control 在 Kimi Code 0.42.0 转为正式功能，`--remote-control` 不再需要 `KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1` 环境变量，直接 `kimi rc` 即可。
 - **v0.41.0** — 在 Kimi Code 0.41.0 上验证通过；面板无需改动。0.41.0 的 Web 版新功能（tower 多智能体协作模式、权限模式更名、右侧面板 Bash 命令改终端样式）都在官方 UI 内，与注入的面板并存可用。一个预期内的局限：新增的**划词标注**（在消息、文件预览、diff 与每轮改动面板或终端中选中文字，添加评论或引用到对话）在 Files 面板自己的预览里不可用；面板是独立的自包含应用，不共享官方 UI 的标注层。官方 UI 自身区域内的划词标注不受影响。
 - **v0.40.1** — **重写为注入官方原版 UI**，不再整包替换。门户自身代码完全不动，因此当前和未来的官方功能（设置里的插件面板、一条消息激活多个技能，均为 0.40.0 新增）在文件面板启用期间照常工作，UI 漂移问题彻底消失。面板改为自包含的原生 JS 应用（`panel/kimi-files-panel.js` + `.css`），自带预览渲染器；安装不再需要 Node/pnpm 和 kimi-code 源码克隆。已在 Kimi Code 0.40.1 上验证：文件树、懒加载展开、markdown/代码/图片预览、隐藏文件开关、git 标记，以及官方插件面板并存。注意：设置对话框的形态取决于会话后端，完整版（含插件页签）在默认的 v2 后端下显示。
 - **v0.39.1** — 在 Kimi Code 0.39.1 上验证通过。一处 wire 变更曾破坏登录门禁：0.39.1 把 `GET /auth` 的就绪标志从 `ready` 改名为 `models_ready`，导致补丁版 UI 把 `ready: undefined` 当成"未登录"，OAuth 授权成功后仍停留在登录页。`getAuth()` 现在两种格式都接受。
-- **v0.39.0** — 在 Kimi Code 0.39.0 上验证通过，包括 **Remote Control** 端到端（`kimi rc`、远程浏览器连接、文件面板经隧道可用）。补丁把中继的 server origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`）回移植到了前端 API 配置中。脚本修复：`apply.sh` / `apply-win.sh` 同步后 `touch` 入口 HTML（rsync/cp 保留源文件 mtime，会让补丁版 `index.html` 比浏览器缓存的官方版更旧而被回 304）；`start-patched-web*.sh` 在 URL 已有查询串时改用 `&` 拼接时间戳（RC 跳转链接就是如此），修掉了把链接搞坏的双 `?` 问题。
+- **v0.39.0** — 在 Kimi Code 0.39.0 上验证通过，包括 **Remote Control** 端到端（`kimi rc`、远程浏览器连接、文件面板经隧道可用）。补丁把中继的 server origin 覆盖逻辑（`?kimi_origin=` / `sessionStorage['kimi-desktop-server-origin']`）回移植到了前端 API 配置中。脚本修复：`kimi-files-show.sh` / `kimi-files-show-win.sh` 同步后 `touch` 入口 HTML（rsync/cp 保留源文件 mtime，会让补丁版 `index.html` 比浏览器缓存的官方版更旧而被回 304）；`kimi-files.sh` / `kimi-files-win.sh` 在 URL 已有查询串时改用 `&` 拼接时间戳（RC 跳转链接就是如此），修掉了把链接搞坏的双 `?` 问题。
 - **v0.37.2** — 在 Kimi Code 0.37.2 上验证通过（面板、目录展开、预览、隐藏文件开关均端到端确认）；补丁无改动。当时上游仍没有原生文件树/文件面板（0.37.0 侧栏的 Open/Done/Workspaces 页签是会话管理，不是文件浏览器）。
 - **v0.36.0** — 在 Kimi Code 0.36.0 上验证通过；补丁无改动。记录了提供 0.31 时代 UI 构建带来的可见 UI 漂移（账户菜单里的过期条目）。
 - **v0.35.0** — 在 Kimi Code 0.35.0 上验证通过；补丁无改动。
@@ -139,7 +142,7 @@ KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1 ./start-patched-web.sh --remote-control
 
 ## 开发
 
-面板没有构建步骤：编辑 `panel/kimi-files-panel.js` / `.css`，重跑 `./apply.sh`（它会按内容哈希给脚本 URL 加版本号），然后强制刷新门户页面。请保持零依赖，所有样式和全局标识都放在 `kfp-` 前缀下。
+面板没有构建步骤：编辑 `panel/kimi-files-panel.js` / `.css`，重跑 `./kimi-files-show.sh`（它会按内容哈希给脚本 URL 加版本号），然后强制刷新门户页面。请保持零依赖，所有样式和全局标识都放在 `kfp-` 前缀下。
 
 旧的源码补丁仍可基于其基准提交重新生成（如有需要）：
 
