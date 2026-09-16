@@ -1,5 +1,5 @@
 #!/bin/bash
-# apply-win.sh — apply.sh 的 Windows (Git Bash) 移植版。
+# kimi-files-show-win.sh — kimi-files-show.sh 的 Windows (Git Bash) 移植版。
 # 把 Files 文件面板注入到正在运行的 kimi web server 的官方 UI 里：
 # 只往 dist-web 拷两个静态文件，并在 index.html 里加 <link> 和
 # <script defer> 各一行；官方 bundle 不做任何改动。
@@ -9,7 +9,7 @@
 #   - GNU stat（stat -c）替代 BSD stat（stat -f）
 #   - sed -i 不带空串参数（GNU sed）
 #
-# 用法：./apply-win.sh [--if-reverted]
+# 用法：./kimi-files-show-win.sh [--if-reverted]
 #   --if-reverted  仅当注入已被还原才重新注入；供看门狗循环调用。
 set -euo pipefail
 

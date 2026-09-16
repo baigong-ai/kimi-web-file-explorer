@@ -1,5 +1,5 @@
 #!/bin/bash
-# apply.sh — 把 Files 文件面板注入到正在运行的 kimi web server 的官方 UI 里。
+# kimi-files-show.sh — 把 Files 文件面板注入到正在运行的 kimi web server 的官方 UI 里。
 #
 # 与旧的"整包替换"不同：官方 dist-web 的 bundle 一个都不动，只往资源目录
 # 拷两个静态文件（kimi-files-panel.js / .css），并在 index.html 里加一行
@@ -10,12 +10,12 @@
 # 按 sha256 校验重新解压到 ~/Library/Caches/kimi-code/web/**/dist-web，
 # index.html 会被还原（注入随之失效）；但 server 启动后按请求直接从磁盘读
 # 文件。因此本脚本必须在 server 启动【之后】运行；若之后又有别的 kimi web
-# 启动把 index.html 还原了，重跑一次本脚本即可（start-patched-web.sh 的
+# 启动把 index.html 还原了，重跑一次本脚本即可（kimi-files.sh 的
 # 看门狗会自动做）。
 #
-# 用法：./apply.sh [--if-reverted]
+# 用法：./kimi-files-show.sh [--if-reverted]
 #   --if-reverted  仅当注入已被还原才重新注入；注入仍在则静默退出。
-#                  供 start-patched-web.sh 的看门狗循环调用。
+#                  供 kimi-files.sh 的看门狗循环调用。
 set -euo pipefail
 
 MODE="${1:-}"

@@ -18,7 +18,7 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9222;
 const userDir = mkdtempSync(join(tmpdir(), 'kshot-'));
 
-// Re-create the same-origin seed page in the newest dist-web cache (apply.sh
+// Re-create the same-origin seed page in the newest dist-web cache (kimi-files-show.sh
 // / server restarts wipe it). It sets localStorage flags then redirects,
 // carrying the #token fragment.
 {

@@ -1,12 +1,12 @@
 #!/bin/bash
-# start-patched-web-win.sh — start-patched-web.sh 的 Windows (Git Bash) 移植版。
+# kimi-files-win.sh — kimi-files.sh 的 Windows (Git Bash) 移植版。
 # 启动 kimi web，server 就绪后自动打 Files 面板补丁，然后才打开浏览器。
 #
 # 与 macOS 版的差异：
 #   - lsof 端口探测改为 curl 探测 URL 是否响应
 #   - open 改为 cmd /c start
 #
-# 用法：./start-patched-web-win.sh [kimi web 的参数...]
+# 用法：./kimi-files-win.sh [kimi web 的参数...]
 # 停止：Ctrl+C（和平时一样）。下次直接 `kimi web` 启动即为官方原版。
 set -euo pipefail
 
@@ -34,7 +34,7 @@ KPID=$!
       BASE="${URL%%#*}"
       if curl -s -o /dev/null --max-time 2 "$BASE"; then
         sleep 1
-        "$DIR/apply-win.sh"
+        "$DIR/kimi-files-show-win.sh"
         if [ "$OPEN_AFTER" = "1" ]; then
           # 加时间戳查询串，逼浏览器重新拉取 index.html（kimi server 不发缓存头）。
           # URL 已带查询串时（如 --remote-control 跳转链接 ?rc=1&from=...）
@@ -51,13 +51,13 @@ KPID=$!
         # 启动时都会重新解压官方资源、把补丁覆盖掉。每 3 秒检查一次。
         while kill -0 "$KPID" 2>/dev/null; do
           sleep 3
-          "$DIR/apply-win.sh" --if-reverted
+          "$DIR/kimi-files-show-win.sh" --if-reverted
         done
         exit 0
       fi
     fi
   done
-  echo "[kimi-web-patch] 等待 server 就绪超时，请手动运行 $DIR/apply-win.sh" >&2
+  echo "[kimi-web-patch] 等待 server 就绪超时，请手动运行 $DIR/kimi-files-show-win.sh" >&2
 ) &
 
 wait "$KPID"
