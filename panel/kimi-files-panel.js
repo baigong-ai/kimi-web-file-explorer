@@ -404,8 +404,9 @@
     const stored = Number(window.localStorage.getItem(WIDTH_KEY));
     if (stored >= 280 && stored <= 900) panel.style.width = stored + 'px';
   } catch { /* ignore */ }
-  resizer.addEventListener('mousedown', (e) => {
+  resizer.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startWidth = panel.getBoundingClientRect().width;
     function onMove(ev) {
@@ -413,14 +414,85 @@
       panel.style.width = width + 'px';
     }
     function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      resizer.removeEventListener('pointermove', onMove);
+      resizer.removeEventListener('pointerup', onUp);
+      resizer.removeEventListener('pointercancel', onUp);
       try {
         window.localStorage.setItem(WIDTH_KEY, String(parseInt(panel.style.width, 10)));
       } catch { /* ignore */ }
     }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    resizer.addEventListener('pointermove', onMove);
+    resizer.addEventListener('pointerup', onUp);
+    resizer.addEventListener('pointercancel', onUp);
+  });
+
+  // Vertical drag: the tab can be parked anywhere along the right edge.
+  // Position is stored as a fraction of the viewport height so it survives
+  // window resizes; null means the CSS default (vertically centered).
+  const TAB_POS_KEY = 'kimi-web.files-panel.tab-pos';
+  let tabPos = null;
+  let suppressTabClick = false;
+  try {
+    const storedPos = Number(window.localStorage.getItem(TAB_POS_KEY));
+    if (storedPos > 0 && storedPos < 1) tabPos = storedPos;
+  } catch { /* ignore */ }
+
+  function applyTabPosition() {
+    if (tabPos === null) return;
+    const hgt = tab.offsetHeight || 72;
+    const top = Math.min(
+      window.innerHeight - hgt - 8,
+      Math.max(8, tabPos * window.innerHeight - hgt / 2)
+    );
+    tab.style.top = top + 'px';
+    tab.style.transform = 'none';
+  }
+  applyTabPosition();
+  window.addEventListener('resize', applyTabPosition);
+
+  tab.addEventListener('pointerdown', (e) => {
+    tab.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startTop = tab.getBoundingClientRect().top;
+    let dragged = false;
+    function onMove(ev) {
+      if (!dragged && Math.abs(ev.clientY - startY) < 4) return;
+      dragged = true;
+      tab.classList.add('kfp-dragging');
+      const hgt = tab.offsetHeight;
+      const top = Math.min(
+        window.innerHeight - hgt - 8,
+        Math.max(8, startTop + (ev.clientY - startY))
+      );
+      tab.style.top = top + 'px';
+      tab.style.transform = 'none';
+      tabPos = (top + hgt / 2) / window.innerHeight;
+    }
+    function cleanup() {
+      tab.removeEventListener('pointermove', onMove);
+      tab.removeEventListener('pointerup', onUp);
+      tab.removeEventListener('pointercancel', onCancel);
+      tab.classList.remove('kfp-dragging');
+    }
+    function persist() {
+      try {
+        window.localStorage.setItem(TAB_POS_KEY, String(tabPos));
+      } catch { /* ignore */ }
+    }
+    function onUp() {
+      cleanup();
+      if (!dragged) return;
+      suppressTabClick = true; // the click after a drag must not toggle the panel
+      persist();
+    }
+    function onCancel() {
+      // no click follows a cancel, so there is nothing to suppress
+      cleanup();
+      if (dragged) persist();
+    }
+    tab.addEventListener('pointermove', onMove);
+    tab.addEventListener('pointerup', onUp);
+    tab.addEventListener('pointercancel', onCancel);
   });
 
   // ------------------------------------------------------------- behavior ---
@@ -436,7 +508,13 @@
     }
   }
 
-  tab.addEventListener('click', () => setOpen(!state.open));
+  tab.addEventListener('click', () => {
+    if (suppressTabClick) {
+      suppressTabClick = false;
+      return;
+    }
+    setOpen(!state.open);
+  });
 
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !state.open) return;

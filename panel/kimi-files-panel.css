@@ -25,10 +25,11 @@
   padding: 0;
   opacity: 0.75;
   transition: opacity 0.15s ease;
+  touch-action: none; /* vertical drags move the tab, not scroll the page */
 }
 .kfp-tab:hover { opacity: 1; color: var(--kfp-fg); }
 .kfp-tab.kfp-hidden { display: none; }
-
+.kfp-tab.kfp-dragging { opacity: 1; cursor: grabbing; transition: none; }
 .kfp-root {
   --kfp-bg: #ffffff;
   --kfp-bg-alt: #f6f7f9;
@@ -88,6 +89,7 @@
   bottom: 0;
   width: 6px;
   cursor: col-resize;
+  touch-action: none;
 }
 
 .kfp-header {
