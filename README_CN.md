@@ -120,7 +120,7 @@ cd kimi-web-files
 | `panel/kimi-files-panel.css` | 面板样式，`.kfp-` 前缀隔离，明暗双主题 |
 | `kimi-files-show.sh` | 把两个面板文件拷进运行中 server 的资源缓存，并往 `index.html` 加 `<link>` / `<script>` 标签 |
 | `kimi-files-show-win.sh` | `kimi-files-show.sh` 的 Windows（Git Bash）移植：缓存位于 `%LOCALAPPDATA%`，使用 GNU sed/stat |
-| `kimi-files.sh` | `kimi web` 包装脚本：等 server 就绪后执行 `kimi-files-show.sh`，然后看门狗值守，注入被其他 `kimi web` 启动覆盖时自动重打 |
+| `kimi-files.sh` | `kimi web` 包装脚本：等 server 本地地址可访问后执行 `kimi-files-show.sh`（HTTP 探测，不关心哪个 kimi 进程持有监听端口），然后看门狗值守，注入被其他 `kimi web` 启动覆盖时自动重打 |
 | `kimi-files-win.sh` | `kimi-files.sh` 的 Windows（Git Bash）移植 |
 | `kimi-web-files.patch` | 旧模式：针对 `apps/kimi-web` 的整包源码补丁（保留供参考，注入模式不需要） |
 | `cdp-shot.mjs` | 开发工具：通过 CDP 驱动无头 Chrome 对面板做端到端截图 |
@@ -128,6 +128,7 @@ cd kimi-web-files
 
 ## 更新记录
 
+- **v2.0.0** — 在 Kimi Code 2.0.0 上验证通过。启动脚本有一处必须修的兼容问题：2.0.0 改了 `kimi web` 的进程模型，主进程会派生子进程，监听端口的是子进程。`kimi-files.sh` 原来的就绪检查（对父进程 PID 跑 `lsof`）因此永远等不到 server，60 秒后超时，注入没有执行，升级后面板看起来就是"消失了"。现在包装脚本改为用 curl 探测本地 UI 地址，拿到响应即算就绪（`kimi-files-win.sh` 本来就是这个做法），不关心哪个进程持有端口，新旧版本都适用。两个包装脚本还修了另一处：从日志提取 URL 时优先取回环的本地 UI 地址，因为 `--remote-control` 输出里第一个 URL 是 `code-rc.kimi.com` 的设备链接，可能抓错。2.0.0 的 web 资源缓存结构、`index.html` 注入点、会话级 fs REST API 都没变，面板本体无需任何改动。
 - **v0.43.1** — 在 Kimi Code 0.43.1 上验证通过；无兼容性改动。面板新功能：文件页签不再固定在右边缘垂直居中位置，可上下拖动停放到任意高度；位置按视口高度比例存储，刷新页面和调整窗口大小后都会恢复。拖动改用 Pointer Events 实现，手机浏览器（比如通过 Remote Control 在手机上）触摸拖动同样可用，不再仅限鼠标；面板宽度拖拽条也一并做了同样改造。另外：Remote Control 在 Kimi Code 0.42.0 转为正式功能，`--remote-control` 不再需要 `KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1` 环境变量，直接 `kimi rc` 即可。
 - **v0.41.0** — 在 Kimi Code 0.41.0 上验证通过；面板无需改动。0.41.0 的 Web 版新功能（tower 多智能体协作模式、权限模式更名、右侧面板 Bash 命令改终端样式）都在官方 UI 内，与注入的面板并存可用。一个预期内的局限：新增的**划词标注**（在消息、文件预览、diff 与每轮改动面板或终端中选中文字，添加评论或引用到对话）在 Files 面板自己的预览里不可用；面板是独立的自包含应用，不共享官方 UI 的标注层。官方 UI 自身区域内的划词标注不受影响。
 - **v0.40.1** — **重写为注入官方原版 UI**，不再整包替换。门户自身代码完全不动，因此当前和未来的官方功能（设置里的插件面板、一条消息激活多个技能，均为 0.40.0 新增）在文件面板启用期间照常工作，UI 漂移问题彻底消失。面板改为自包含的原生 JS 应用（`panel/kimi-files-panel.js` + `.css`），自带预览渲染器；安装不再需要 Node/pnpm 和 kimi-code 源码克隆。已在 Kimi Code 0.40.1 上验证：文件树、懒加载展开、markdown/代码/图片预览、隐藏文件开关、git 标记，以及官方插件面板并存。注意：设置对话框的形态取决于会话后端，完整版（含插件页签）在默认的 v2 后端下显示。

@@ -28,7 +28,12 @@ KPID=$!
   for _ in $(seq 1 240); do
     sleep 0.5
     if ! kill -0 "$KPID" 2>/dev/null; then exit 0; fi
-    URL=$(grep -m1 -oE 'https?://[^ ]+' "$LOG" 2>/dev/null || true)
+    # 优先抓回环地址的 Local UI URL：--remote-control 输出里第一个 URL 是
+    # code-rc.kimi.com 的远程链接，抓错了 curl 探测会失真（远端通了本地未必就绪）。
+    URL=$(grep -m1 -oE 'https?://(127\.0\.0\.1|localhost|\[::1\])[^ ]*' "$LOG" 2>/dev/null || true)
+    if [ -z "$URL" ]; then
+      URL=$(grep -m1 -oE 'https?://[^ ]+' "$LOG" 2>/dev/null || true)
+    fi
     if [ -n "$URL" ]; then
       # 等 server 真正响应（fragment token 部分不发给 server，curl 用 base 即可）
       BASE="${URL%%#*}"
